@@ -12,6 +12,8 @@ import clang_parser
 import export
 
 
+# TODO support sigterm and close all thread
+
 def parse_args():
     _arg_parser = argparse.ArgumentParser(description="Python clang analyser c++")
 
@@ -25,7 +27,7 @@ def parse_args():
 
     group = _arg_parser.add_argument_group("Compilation")
     group.add_argument('-I', '--include_clang',
-                       help='Add include file or directory. Separate each with \';\'.'
+                       help='Add include file or directory. Separate each with \';\'. '
                             'Include can be absolute or relative from root_directory.')
     group.add_argument('--find_include', default=False, action='store_true',
                        help='If active, search include file in root_directory.')
@@ -35,17 +37,19 @@ def parse_args():
                        help='Path of root directory. This path is use to filter files from '
                             'this directory only and set the working_path is not specified.')
     group.add_argument('--working_path',
-                       help='Specify path of file or directory. Need to exist into root_directory.\n'
+                       help='Specify path of file or directory. Need to exist into root_directory. '
                             'If not specified, working_path will be root_directory.')
 
-    return _arg_parser.parse_args()
+    return _arg_parser
 
 
-def validate_parser(_parser):
+def validate_parser(_arg_parser):
+    _parser = _arg_parser.parse_args()
+
     # validate argument
     # root directory
     if not os.path.isdir(_parser.root_directory):
-        _parser.format_help()
+        _arg_parser.print_help()
         raise ValueError("--root_directory '%s' is not a valid directory" % _parser.root_directory)
 
     # force to clean path, like remove last /
@@ -56,7 +60,7 @@ def validate_parser(_parser):
         _parser.working_path = _root_dir
     elif _root_dir in _parser.working_path:
         if not os.path.exists(_parser.working_path):
-            _parser.format_help()
+            _arg_parser.print_help()
             raise ValueError("--working_path '%s' is not a valid directory or file." % _parser.working_path)
     else:
         new_path = os.path.abspath(os.path.join(_root_dir, _parser.working_path))
@@ -78,7 +82,7 @@ def validate_parser(_parser):
     # find include directory
     if _parser.find_include:
         key = "include"
-        lst_find = [os.path.join(dirpath, key) for dirpath, dirnames, _ in os.walk(_root_dir) if key in dirnames]
+        lst_find = [os.path.join(dir_path, key) for dir_path, dir_names, _ in os.walk(_root_dir) if key in dir_names]
         _lst_include.extend(lst_find)
 
     # reorganize include argument for clang
@@ -93,8 +97,8 @@ def validate_parser(_parser):
     if os.path.isdir(_parser.working_path):
         # pattern = ("*.cc", "*.cpp", "*.c")
         pattern = ("*.cc", "*.cpp")
-        for dirpath, _, _ in os.walk(_parser.working_path):
-            [_lst_file.extend(glob(os.path.join(dirpath, a))) for a in pattern]
+        for dir_path, _, _ in os.walk(_parser.working_path):
+            [_lst_file.extend(glob(os.path.join(dir_path, a))) for a in pattern]
         # remove root_directory from file
         _lst_file = [_file[len(_root_dir) + 1:] for _file in _lst_file]
     elif os.path.isfile(_parser.working_path):
@@ -116,17 +120,13 @@ class ClangParserGenerator:
             yield clang_parser.clang_parser(_file)
 
 
-if __name__ == '__main__':
-    start_time = time.time()
-    start_clock = time.clock()
-    parser = validate_parser(parse_args())
-
+def start_clang_process(_parser):
+    _lst_result = []
     csv_cursor_kind = [clang_parser.clang.cindex.CursorKind.CLASS_DECL,
                        clang_parser.clang.cindex.CursorKind.CLASS_TEMPLATE,
                        clang_parser.clang.cindex.CursorKind.CXX_METHOD,
                        clang_parser.clang.cindex.CursorKind.FUNCTION_TEMPLATE,
                        clang_parser.clang.cindex.CursorKind.FUNCTION_DECL]
-    lst_result = []
 
     # TODO add ignore option from parsing
     # TODO fast fix to ignore gtest
@@ -149,10 +149,19 @@ if __name__ == '__main__':
                 print(c.to_string())
 
             if c.kind in csv_cursor_kind:
-                lst_result.append(c)
+                _lst_result.append(c)
 
         if parser.debug:
             print  # beautiful end line!
+    return _lst_result
+
+
+if __name__ == '__main__':
+    start_time = time.time()
+    start_clock = time.clock()
+    parser = validate_parser(parse_args())
+
+    lst_result = start_clang_process(parser)
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)
