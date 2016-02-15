@@ -17,7 +17,12 @@ import export
 def parse_args():
     _arg_parser = argparse.ArgumentParser(description="Python clang analyser c++")
 
-    _arg_parser.add_argument('-d', '--debug', default=False, help='Enable debug', action='store_true')
+    group = _arg_parser.add_argument_group("Debug")
+    group.add_argument('-d', '--debug', default=False, help='Enable debug', action='store_true')
+    group.add_argument('--show_missing_header_file', default=False, help='Show when Clang cannot find header file.',
+                       action='store_true')
+    group.add_argument('--remove_token', default=False, help='We need token to retrieve the algorithm..',
+                       action='store_true')
 
     group = _arg_parser.add_argument_group("Parallelism")
     group.add_argument('--disable_threading', default=False, action='store_true',
@@ -112,15 +117,19 @@ def validate_parser(_arg_parser):
 
 
 class ClangParserGenerator:
-    def __init__(self, _lst_file):
+    def __init__(self, _lst_file, _clang_p):
         self._lst_file = _lst_file
+        self._clang_p = _clang_p
 
     def generator(self):
         for _file in self._lst_file:
-            yield clang_parser.clang_parser(_file)
+            yield self._clang_p(_file)
+            # yield self._clang_p.clang_parser(_file)
 
 
 def start_clang_process(_parser):
+    # TODO The parallelism don't work with clang_parser_class
+    clang_p = clang_parser.ClangParser(_parser)
     _lst_result = []
     csv_cursor_kind = [clang_parser.clang.cindex.CursorKind.CLASS_DECL,
                        clang_parser.clang.cindex.CursorKind.CLASS_TEMPLATE,
@@ -130,30 +139,28 @@ def start_clang_process(_parser):
 
     # TODO add ignore option from parsing
     # TODO fast fix to ignore gtest
-    lst_file = [(f, parser.root_directory, parser.lst_include_clang) for f in parser.files if
+    lst_file = [(f, _parser.root_directory, _parser.lst_include_clang) for f in _parser.files if
                 "/test/" not in f and "/build/" not in f]
-    if parser.disable_threading:
-        it = ClangParserGenerator(lst_file).generator()
+    if _parser.disable_threading:
+        it = ClangParserGenerator(lst_file, clang_p.clang_parser).generator()
     else:
-        it = Pool(processes=parser.nb_cpu).imap_unordered(clang_parser.clang_parser, lst_file)
+        it = Pool(processes=_parser.nb_cpu).imap_unordered(clang_p.clang_parser, lst_file)
 
+    # append data with csv_cursor_kind filter
     count_file = len(lst_file)
-    i_file = 0
-    for t in it:
-        i_file += 1
-        if parser.debug:
+    if _parser.debug:
+        i_file = 0
+        for t in it:
+            i_file += 1
             print("%s/%s File %s" % (i_file, count_file, t[0]))
-
-        for c in t[2]:
-            if parser.debug:
+            for c in t[2]:
                 print(c.to_string())
-
-            if c.kind in csv_cursor_kind:
-                _lst_result.append(c)
-
-        if parser.debug:
+                if c.kind in csv_cursor_kind:
+                    _lst_result.append(c)
             print  # beautiful end line!
-    return _lst_result
+        return _lst_result
+    # TODO need more documentation or better variable name
+    return [res for res in [t for t in it][2] if res.kind in csv_cursor_kind]
 
 
 if __name__ == '__main__':
