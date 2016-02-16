@@ -192,15 +192,17 @@ def start_clang_process(_parser):
 
     # execute and return result for all file
     if _parser.quiet:
-        return [clang_obj_result for clang_obj_result in it]
-
-    i_file = 0
-    count_file = len(lst_clang_parser_arg)
-    lst_result = []
-    for clang_obj_result in it:
-        i_file += 1
-        print("(%s/%s) File %s" % (i_file, count_file, clang_obj_result[0]))
-        lst_result.append(clang_obj_result)
+        lst_result = [clang_obj_result for clang_obj_result in it]
+    else:
+        i_file = 0
+        count_file = len(lst_clang_parser_arg)
+        lst_result = []
+        for clang_obj_result in it:
+            i_file += 1
+            print("(%s/%s) File %s" % (i_file, count_file, clang_obj_result[0]))
+            lst_result.append(clang_obj_result)
+    # compute ast completion
+    # clang_parser.class_completion(lst_result)
     return lst_result
 
 

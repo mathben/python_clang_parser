@@ -69,14 +69,18 @@ def _find_derived_class(cursor):
     # remove reserved word like public, private
     end_key = "{"
     begin_store_key = ":"
+    new_class_key = ","
     begin_store = False
     reserved_word = ["public", "private"]
     lst_token = []
+    word_completion = ""
     for token in cursor.get_tokens():
         word = token.spelling
 
         # end iterate condition
         if word == end_key:
+            if word_completion:
+                lst_token.append(word_completion)
             return lst_token
 
         # begin store condition
@@ -85,8 +89,13 @@ def _find_derived_class(cursor):
                 begin_store = True
             continue
 
+        # another derived class
+        if word == new_class_key:
+            lst_token.append(word_completion)
+            continue
+
         if word not in reserved_word:
-            lst_token.append(word)
+            word_completion += word
 
 
 def get_variables(cursor):
@@ -122,20 +131,24 @@ class Class(ASTObject):
     def __init__(self, cursor, filename):
         super(Class, self).__init__(cursor, filename)
 
-        self.derived_class = _find_derived_class(self._cursor)
+        # self.derived_class = _find_derived_class(self._cursor)
 
         self.methods = [Method(c_child, filename) for c_child in cursor.get_children() if
                         c_child.kind is clang.cindex.CursorKind.CXX_METHOD]
+
+        self.derived_class = [c_child for c_child in cursor.get_children() if
+                              c_child.kind is clang.cindex.CursorKind.CXX_BASE_SPECIFIER]
+
+        self.namespace_name = cursor.type.spelling
 
     def __repr__(self):
         return self.to_string()
 
     def get_dot(self):
         # example : "{Animal|+ name : string\l+ age : int\l|+ die() : void\l}"
-        namespace_name = self._cursor.type.spelling
-        if self.derived_class:
-            namespace_name += " - " + str(self.derived_class)
-        return "{%s|%s|%s}" % (namespace_name, _get_dot_lst_cursor(self.variable, self), self._get_dot_method())
+        # if self.derived_class:
+        #     self.namespace_name += " - " + str(self.derived_class)
+        return "{%s|%s|%s}" % (self.namespace_name, _get_dot_lst_cursor(self.variable, self), self._get_dot_method())
 
     def _get_dot_method(self):
         lst_cursor = [fct._cursor for fct in self.methods]
@@ -232,6 +245,23 @@ def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
         result = merge_method(result)
 
     return result
+
+
+# def create_class_dict_from_lst_ast_obj(lst_ast_obj):
+#     _filter = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]
+#     # double loop to get all class
+#     return {cls_obj.namespace_name: cls_obj for lst_clang_obj in lst_ast_obj for cls_obj in lst_clang_obj[2] if
+#             cls_obj.kind in _filter}
+#
+#
+# def class_completion(lst_ast_obj):
+#     dct_cls = create_class_dict_from_lst_ast_obj(lst_ast_obj)
+#
+#     # loop in class and update reference
+#     # update derived class
+#     for ast_name, ast_cls in dct_cls.items():
+#         for str_derived_cls in ast_cls.derived_class:
+#             print(ast_cls.name)
 
 
 def merge_method(lst_method):

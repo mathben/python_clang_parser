@@ -6,6 +6,11 @@ Python application with Clang python wrapper to parse static code c++
 - Create csv with statistic analyse
 - Parallelism execution
 
+## TODO
+- Load config file to start execution. Contain application argument
+- Add test
+- Serialize/Deserialize python AST
+
 ## Dependency
 python2
 libclang, the Clang python binding

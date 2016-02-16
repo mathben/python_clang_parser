@@ -28,7 +28,7 @@ class ClangParserUML(object):
         # # n = g.get_node('a')
 
         self.g.layout(prog='neato')
-        self.g.draw(path=self._name + "_neato.svgz", format='svgz')
+        self.g.draw(path=self._name + "_neato.svgz", format='svgz', args='-Gepsilon=1')
 
         self.g.layout(prog='dot')
         self.g.draw(path=self._name + "_dot.svgz", format='svgz')
@@ -47,11 +47,22 @@ class ClangParserUML(object):
     def _add_class_dot(self):
         _filter = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]
         # double loop to get all class
-        [self._add_node(cls_obj) for lst_clang_obj in self._lst_obj_ast for cls_obj in lst_clang_obj[2] if
-         cls_obj.kind in _filter]
+        for cls_obj in [cls_obj for lst_clang_obj in self._lst_obj_ast for cls_obj in lst_clang_obj[2] if
+                        cls_obj.kind in _filter]:
+            self._add_class_node(cls_obj)
+        for cls_obj in [cls_obj for lst_clang_obj in self._lst_obj_ast for cls_obj in lst_clang_obj[2] if
+                        cls_obj.kind in _filter and cls_obj.derived_class]:
+            self._add_class_base_edge(cls_obj)
 
-    def _add_node(self, cls_obj):
-        self.g.add_node(cls_obj.name_tmpl, label=cls_obj.get_dot())
+    def _add_class_node(self, cls_obj):
+        self.g.add_node(cls_obj.namespace_name, label=cls_obj.get_dot())
+
+    def _add_class_base_edge(self, cls_obj):
+        for cls_base in cls_obj.derived_class:
+            if not self.g.has_node(cls_base.type.spelling):
+                # create a external node
+                self.g.add_node(cls_base.type.spelling, color="yellow")
+            self.g.add_edge(cls_obj.namespace_name, cls_base.type.spelling, arrowhead="empty")
 
 
 class ClangParserCSV(object):
