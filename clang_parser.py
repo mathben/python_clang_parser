@@ -16,6 +16,43 @@ _clang_lib = clang.cindex.conf.lib
 CLANG_DEFAULT_ARG = ['-x', 'c++', '-std=c++11', '-I/opt/llvm/build/lib/clang/3.7.1/include']
 
 
+# dot function
+def _get_dot_lst_cursor(lst_cursor, ast_obj):
+    char_new_line = "\\l"
+    # example : "+ name : string\l+ age : int\l"
+    # or empty : ""
+    str_var = char_new_line.join([_get_dot_format(var, ast_obj) for var in lst_cursor])
+    if str_var:
+        str_var += char_new_line
+    return str_var
+
+
+def _get_dot_format(cursor, ast_obj):
+    # example : "+ name : string"
+    #
+    # + Public
+    # - Private
+    # # Protected
+    # ~ Package (default visibility)
+
+    if cursor.access_specifier == clang.cindex.AccessSpecifier.PUBLIC:
+        sign = "+ "
+    elif cursor.access_specifier == clang.cindex.AccessSpecifier.PROTECTED:
+        sign = "# "
+    elif cursor.access_specifier == clang.cindex.AccessSpecifier.PRIVATE:
+        sign = "- "
+    elif cursor.access_specifier == clang.cindex.AccessSpecifier.NONE:
+        sign = "~ "
+    else:  # elif cursor.access_specifier == clang.cindex.AccessSpecifier.INVALID:
+        print("Warning, receive AccessSpecifier.Invalid for %s obj, var %s" % (ast_obj.name_tmpl, cursor.displayname))
+        sign = "? "
+
+    return "%s %s : %s" % (sign, cursor.displayname, cursor.type.spelling)
+
+
+# end dot function
+
+
 def get_tokens_statistic(cursor):
     # TODO to get else if, check if offset is inside of 5. c_child.location.offset
     lst_token_key = ["if", "else", "else if", "switch", "while", "for", "break", "continue", "return", "using"]
@@ -24,9 +61,37 @@ def get_tokens_statistic(cursor):
     return collections.Counter(lst_token)
 
 
-def get_variables_statistic(cursor):
+def _find_derived_class(cursor):
+    # the cursor need to be a class
+    # iterate in token
+    # stop iteration when meet '{'
+    # store class name after ':'
+    # remove reserved word like public, private
+    end_key = "{"
+    begin_store_key = ":"
+    begin_store = False
+    reserved_word = ["public", "private"]
+    lst_token = []
+    for token in cursor.get_tokens():
+        word = token.spelling
+
+        # end iterate condition
+        if word == end_key:
+            return lst_token
+
+        # begin store condition
+        if not begin_store:
+            if word == begin_store_key:
+                begin_store = True
+            continue
+
+        if word not in reserved_word:
+            lst_token.append(word)
+
+
+def get_variables(cursor):
     lst_kind_var = [clang.cindex.CursorKind.VAR_DECL]
-    return len([None for c_child in cursor.walk_preorder() if c_child.kind in lst_kind_var])
+    return [c_child for c_child in cursor.walk_preorder() if c_child.kind in lst_kind_var]
 
 
 def get_annotations(cursor):
@@ -43,8 +108,10 @@ class ASTObject(object):
         self._kind_id = cursor.kind.value
         # self.annotations = get_annotations(cursor)
         self.mangled_name = cursor.mangled_name
-        self.count_variable = get_variables_statistic(cursor)
+        self.variable = get_variables(cursor)
+        self.count_variable = len(self.variable)
         self.keywords = None
+        self._cursor = cursor
 
     @property
     def kind(self):
@@ -55,11 +122,24 @@ class Class(ASTObject):
     def __init__(self, cursor, filename):
         super(Class, self).__init__(cursor, filename)
 
+        self.derived_class = _find_derived_class(self._cursor)
+
         self.methods = [Method(c_child, filename) for c_child in cursor.get_children() if
                         c_child.kind is clang.cindex.CursorKind.CXX_METHOD]
 
     def __repr__(self):
         return self.to_string()
+
+    def get_dot(self):
+        # example : "{Animal|+ name : string\l+ age : int\l|+ die() : void\l}"
+        namespace_name = self._cursor.type.spelling
+        if self.derived_class:
+            namespace_name += " - " + str(self.derived_class)
+        return "{%s|%s|%s}" % (namespace_name, _get_dot_lst_cursor(self.variable, self), self._get_dot_method())
+
+    def _get_dot_method(self):
+        lst_cursor = [fct._cursor for fct in self.methods]
+        return _get_dot_lst_cursor(lst_cursor, self)
 
     def to_string(self):
         # TODO change this to_string. Move this into export.
@@ -87,6 +167,9 @@ class Function(ASTObject):
     def __init__(self, cursor, filename):
         super(Function, self).__init__(cursor, filename)
         self.keywords = get_tokens_statistic(cursor) + collections.Counter(var=self.count_variable)
+
+    def get_dot(self):
+        return _get_dot_format(self._cursor, self)
 
     def __repr__(self):
         return self.to_string()
@@ -130,8 +213,10 @@ def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
     # TODO merge when method is not in class, but in namespace
     for c_child in children_cursor:
         if c_child.kind in [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]:
-            cls = Class(c_child, filename)
-            result.append(cls)
+            # eliminate forward declaration class, if token size <= 3
+            if len([t for t in c_child.get_tokens()]) > 3:
+                cls = Class(c_child, filename)
+                result.append(cls)
         elif c_child.kind == clang.cindex.CursorKind.NAMESPACE:
             result.extend(build_classes(c_child, filename, dir_name, _arg_parser, is_first_call=False))
         elif c_child.kind in [clang.cindex.CursorKind.FUNCTION_TEMPLATE, clang.cindex.CursorKind.FUNCTION_DECL,

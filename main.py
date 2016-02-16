@@ -64,13 +64,17 @@ def parse_args():
     group.add_argument('--clean_ast', default=False, action='store_true',
                        help='Clean ast files from --translation_unit_dir before create it.')
 
-    group = _arg_parser.add_argument_group("Functionality")
+    group = _arg_parser.add_argument_group("Statistic")
     group.add_argument('--generate_csv_stat', default=False, action='store_true',
                        help='Generate statistic of each function and method. Write output in csv file. '
                             'The statistic is the variable number and c++ token like [if, while, return, ...]. '
                             'See --csv_stat_name to change the output name file.')
-    group.add_argument('--csv', default="result" + CSV_EXT_FILE, help='Output csv name file of statistic generation. '
-                                                                      'Add extension %s if not set.' % CSV_EXT_FILE)
+    group.add_argument('--csv', default="result" + CSV_EXT_FILE,
+                       help='Output csv name file of statistic generation. Add extension %s if not set.' % CSV_EXT_FILE)
+
+    group = _arg_parser.add_argument_group("UML")
+    group.add_argument('--generate_uml', default=False, action='store_true',
+                       help='Generate UML of relation between class.')
 
     return _arg_parser
 
@@ -209,6 +213,9 @@ if __name__ == '__main__':
 
     if parser.generate_csv_stat:
         export.ClangParserCSV(parser, lst_obj_ast).generate_stat()
+
+    if parser.generate_uml:
+        export.ClangParserUML(parser, lst_obj_ast).generate_uml()
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)

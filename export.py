@@ -1,8 +1,57 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-import csv
 
 from clang_parser import clang
+import pygraphviz as pgv
+import csv
+import os
+
+
+class ClangParserUML(object):
+    def __init__(self, _parser, _lst_obj_ast):
+        self._parser = _parser
+        self._lst_obj_ast = _lst_obj_ast
+        self._name = os.path.split(_parser.working_path)[1]
+        self._uml_name = "UML " + self._name
+        self.g = pgv.AGraph(name=self._uml_name, directed=True)
+
+    def generate_uml(self):
+        self.g.node_attr.update(shape='record')
+
+        self._add_class_dot()
+
+        # lst_class = ['a', 'b']
+        # lst_class_link = [('a', 'b')]
+        # self.g.add_nodes_from(lst_class)
+        # self.g.add_node('v', label="{Dog||+ bark() : void\l}")
+        # self.g.add_edges_from(lst_class_link)
+        # # n = g.get_node('a')
+
+        self.g.layout(prog='neato')
+        self.g.draw(path=self._name + "_neato.svgz", format='svgz')
+
+        self.g.layout(prog='dot')
+        self.g.draw(path=self._name + "_dot.svgz", format='svgz')
+
+        self.g.layout(prog='twopi')
+        self.g.draw(path=self._name + "_twopi.svgz", format='svgz')
+
+        self.g.layout(prog='circo')
+        self.g.draw(path=self._name + "_circo.svgz", format='svgz')
+
+        self.g.layout(prog='fdp')
+        self.g.draw(path=self._name + "_fdp.svgz", format='svgz')
+
+        self.g.write(self._name + ".dot")
+
+    def _add_class_dot(self):
+        _filter = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]
+        # double loop to get all class
+        [self._add_node(cls_obj) for lst_clang_obj in self._lst_obj_ast for cls_obj in lst_clang_obj[2] if
+         cls_obj.kind in _filter]
+
+    def _add_node(self, cls_obj):
+        self.g.add_node(cls_obj.name_tmpl, label=cls_obj.get_dot())
 
 
 class ClangParserCSV(object):
@@ -47,8 +96,8 @@ class ClangParserCSV(object):
         if not self._parser.quiet:
             print("Creating csv on file '%s'" % filename)
 
-        with open(filename, 'w') as csvfile:
-            result = csv.writer(csvfile, delimiter=';', quotechar="", quoting=csv.QUOTE_NONE)
+        with open(filename, 'w') as csv_file:
+            result = csv.writer(csv_file, delimiter=';', quotechar="", quoting=csv.QUOTE_NONE)
             result.writerow(self._header)
 
             for clang_obj in data:
