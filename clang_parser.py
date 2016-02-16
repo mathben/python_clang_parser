@@ -4,11 +4,16 @@ import collections
 import os
 import sys
 
+AST_EXT_FILE = ".ast"
+
 sys.path.append("/opt/llvm/tools/clang/bindings/python")
 import clang.cindex
 
 # clang.cindex.Config.set_library_path("/usr/lib/")
 clang.cindex.Config.set_library_file("/opt/llvm/build/lib/libclang.so.3.7")
+_clang_lib = clang.cindex.conf.lib
+
+CLANG_DEFAULT_ARG = ['-x', 'c++', '-std=c++11', '-I/opt/llvm/build/lib/clang/3.7.1/include']
 
 
 def get_tokens_statistic(cursor):
@@ -109,7 +114,7 @@ class Method(Function):
         return "%s %s" % (self.name, self.keywords.items())
 
 
-def build_classes(cursor, filename, dir_name, is_first_call=True):
+def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
     result = []
     # ignore Cursor Kind
     all_kind = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE,
@@ -127,7 +132,7 @@ def build_classes(cursor, filename, dir_name, is_first_call=True):
             cls = Class(c_child, filename)
             result.append(cls)
         elif c_child.kind == clang.cindex.CursorKind.NAMESPACE:
-            result.extend(build_classes(c_child, filename, dir_name, is_first_call=False))
+            result.extend(build_classes(c_child, filename, dir_name, _arg_parser, is_first_call=False))
         elif c_child.kind in [clang.cindex.CursorKind.FUNCTION_TEMPLATE, clang.cindex.CursorKind.FUNCTION_DECL,
                               clang.cindex.CursorKind.CXX_METHOD]:
             fct = Function(c_child, filename)
@@ -165,14 +170,46 @@ def merge_method(lst_method):
     return result
 
 
-def clang_parser(arg):
-    _file_name = arg[0]
-    _dir_name = arg[1]
-    _clang_arg = arg[2]
+def _path_to_filename(_path):
+    split = os.path.split(_path)
+    if not len(split[0]):
+        return _path
+    return _path_to_filename(split[0]) + "_" + split[1]
 
-    # index = clang.cindex.Index(clang.cindex.conf.lib.clang_createIndex(False, True))  # True to display diagnostic
-    _index = clang.cindex.Index(clang.cindex.conf.lib.clang_createIndex(False, False))
+
+def clang_parser(arg):
+    # TODO can we use unsaved_file with _clang_index.parse to improve performance?
+    _file_name = os.path.normcase(arg[0])
+    _dir_name = os.path.normcase(arg[1])
+    _clang_arg = CLANG_DEFAULT_ARG + arg[2]
+    _arg_parser = arg[3]
+
+    _ast_file_exist = False
+    _ast_file_path = ""
+
+    if _arg_parser.translation_unit_dir:
+        _ast_file_path = os.path.join(_arg_parser.translation_unit_dir, _path_to_filename(_file_name) + AST_EXT_FILE)
+        _ast_file_exist = os.path.isfile(_ast_file_path)
+
     absolute_file_path = os.path.join(_dir_name, _file_name)
-    _translation_unit = _index.parse(absolute_file_path, ['-x', 'c++', '-std=c++11'] + _clang_arg)
-    _result = build_classes(_translation_unit.cursor, _file_name, _dir_name)
+    options = clang.cindex.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES if _arg_parser.remove_token else 0
+
+    _obj_c_clang_index = _clang_lib.clang_createIndex(_arg_parser.exclude_decl_from_PCH,
+                                                      _arg_parser.show_missing_header_file)
+    _clang_index = clang.cindex.Index(_obj_c_clang_index)
+
+    if _ast_file_exist:
+        # load AST
+        _translation_unit = clang.cindex.TranslationUnit.from_ast_file(_ast_file_path, index=_clang_index)
+    else:
+        # parse to generate AST
+        _translation_unit = _clang_index.parse(absolute_file_path, _clang_arg, options=options)
+
+        if _arg_parser.translation_unit_dir:
+            # save AST file
+            _translation_unit.save(_ast_file_path)
+
+    # build hierarchy
+    _result = build_classes(_translation_unit.cursor, _file_name, _dir_name, _arg_parser)
+
     return _file_name, _clang_arg, _result
