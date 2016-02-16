@@ -62,6 +62,7 @@ class Class(ASTObject):
         return self.to_string()
 
     def to_string(self):
+        # TODO change this to_string. Move this into export.
         # file_str = "File %s\n" % self.file_name
         class_str = "\t+--%s - %s\n" % (self.kind, self.name_tmpl)
         method_str = "\n".join(["\t|\t+--%s - %s" % (clang.cindex.CursorKind.CXX_METHOD, f) for f in self.methods])

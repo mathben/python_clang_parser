@@ -13,6 +13,7 @@ import clang_parser
 import export
 
 AST_EXT_FILE = ".ast"
+CSV_EXT_FILE = ".csv"
 CPP_EXT_FILE = ("*.cc", "*.cpp")
 
 
@@ -63,6 +64,14 @@ def parse_args():
     group.add_argument('--clean_ast', default=False, action='store_true',
                        help='Clean ast files from --translation_unit_dir before create it.')
 
+    group = _arg_parser.add_argument_group("Functionality")
+    group.add_argument('--generate_csv_stat', default=False, action='store_true',
+                       help='Generate statistic of each function and method. Write output in csv file. '
+                            'The statistic is the variable number and c++ token like [if, while, return, ...]. '
+                            'See --csv_stat_name to change the output name file.')
+    group.add_argument('--csv', default="result" + CSV_EXT_FILE, help='Output csv name file of statistic generation. '
+                                                                      'Add extension %s if not set.' % CSV_EXT_FILE)
+
     return _arg_parser
 
 
@@ -93,6 +102,16 @@ def validate_parser(_arg_parser):
         else:
             val = _parser.working_path, _root_dir
             raise ValueError("--working_path '%s' not exist in root_directory '%s'." % val)
+
+    # Functionality
+    if _parser.generate_csv_stat:
+        if _parser.csv[-len(CSV_EXT_FILE):] != CSV_EXT_FILE:
+            _parser.csv += CSV_EXT_FILE
+        # validate if can open it
+        try:
+            open(_parser.csv).close()
+        except:
+            raise ValueError("--csv %s is wrong or maybe you don't access to write a file." % _parser.csv)
 
     # translation unit path saving files
     if _parser.translation_unit_dir:
@@ -136,8 +155,11 @@ def validate_parser(_arg_parser):
         _lst_file = [_parser.working_path]
     else:
         raise Exception("Argument --working_path '%s' is not a file or a dir." % _parser.working_path)
-    # remove root_directory from file, for better visibility
-    _parser.files = [_file[len(_root_dir) + 1:] for _file in _lst_file]
+    # remove root_directory from file, for better visibility and filter with exclude dir
+    # TODO add ignore option from parsing
+    # TODO fast fix to ignore gtest
+    _pos_cut_path = len(_root_dir) + 1
+    _parser.files = [_file[_pos_cut_path:] for _file in _lst_file if "/test/" not in _file and "/build/" not in _file]
 
     return _parser
 
@@ -152,44 +174,30 @@ class ClangParserGenerator:
 
 
 def start_clang_process(_parser):
-    _lst_result = []
-    csv_cursor_kind = [clang_parser.clang.cindex.CursorKind.CLASS_DECL,
-                       clang_parser.clang.cindex.CursorKind.CLASS_TEMPLATE,
-                       clang_parser.clang.cindex.CursorKind.CXX_METHOD,
-                       clang_parser.clang.cindex.CursorKind.FUNCTION_TEMPLATE,
-                       clang_parser.clang.cindex.CursorKind.FUNCTION_DECL]
-
     if _parser.clean_ast:
         for _file in _parser.ast_file:
             os.remove(_file)
         _parser.ast_file = []
 
-    # TODO add ignore option from parsing
-    # TODO fast fix to ignore gtest
-    lst_file = [(f, _parser.root_directory, _parser.lst_include_clang, _parser) for f in _parser.files if
-                "/test/" not in f and "/build/" not in f]
-    if _parser.disable_threading:
-        it = ClangParserGenerator(lst_file).generator()
-    else:
-        it = Pool(processes=_parser.nb_cpu).imap_unordered(clang_parser.clang_parser, lst_file)
+    lst_clang_parser_arg = [(f, _parser.root_directory, _parser.lst_include_clang, _parser) for f in _parser.files]
 
-    # append data with csv_cursor_kind filter
-    count_file = len(lst_file)
-    if _parser.debug and not _parser.quiet:
-        i_file = 0
-        for t in it:
-            i_file += 1
-            print("%s/%s File %s" % (i_file, count_file, t[0]))
-            for c in t[2]:
-                print(c.to_string())
-                if c.kind in csv_cursor_kind:
-                    _lst_result.append(c)
-            print  # beautiful end line!
-        return _lst_result
-    # TODO need more documentation or better variable name to understand this
-    _results = [t[2] for t in it]
-    # create a line for each entity in result
-    return [line for res in _results for line in res if line.kind in csv_cursor_kind]
+    if _parser.disable_threading:
+        it = ClangParserGenerator(lst_clang_parser_arg).generator()
+    else:
+        it = Pool(processes=_parser.nb_cpu).imap_unordered(clang_parser.clang_parser, lst_clang_parser_arg)
+
+    # execute and return result for all file
+    if _parser.quiet:
+        return [clang_obj_result for clang_obj_result in it]
+
+    i_file = 0
+    count_file = len(lst_clang_parser_arg)
+    lst_result = []
+    for clang_obj_result in it:
+        i_file += 1
+        print("(%s/%s) File %s" % (i_file, count_file, clang_obj_result[0]))
+        lst_result.append(clang_obj_result)
+    return lst_result
 
 
 if __name__ == '__main__':
@@ -197,11 +205,12 @@ if __name__ == '__main__':
     start_clock = time.clock()
     parser = validate_parser(parse_args())
 
-    lst_result = start_clang_process(parser)
+    lst_obj_ast = start_clang_process(parser)
+
+    if parser.generate_csv_stat:
+        export.ClangParserCSV(parser, lst_obj_ast).generate_stat()
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)
     if not parser.quiet:
         print("Elapsed time was %s and elapsed clock was %s." % (duration_time, duration_clock))
-
-    export.create_csv(parser, lst_result)
