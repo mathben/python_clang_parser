@@ -17,17 +17,17 @@ CLANG_DEFAULT_ARG = ['-x', 'c++', '-std=c++11', '-I/opt/llvm/build/lib/clang/3.7
 
 
 # dot function
-def _get_dot_lst_cursor(lst_cursor, ast_obj):
+def _get_dot_lst_cursor(lst_ast_obj, parent_ast_obj):
     char_new_line = "\\l"
     # example : "+ name : string\l+ age : int\l"
     # or empty : ""
-    str_var = char_new_line.join([_get_dot_format(var, ast_obj) for var in lst_cursor])
+    str_var = char_new_line.join([_get_dot_format(var, parent_ast_obj) for var in lst_ast_obj])
     if str_var:
         str_var += char_new_line
     return str_var
 
 
-def _get_dot_format(cursor, ast_obj):
+def _get_dot_format(ast_obj, parent_ast_obj=None):
     # example : "+ name : string"
     #
     # + Public
@@ -35,19 +35,20 @@ def _get_dot_format(cursor, ast_obj):
     # # Protected
     # ~ Package (default visibility)
 
-    if cursor.access_specifier == clang.cindex.AccessSpecifier.PUBLIC:
+    if ast_obj.access_specifier == clang.cindex.AccessSpecifier.PUBLIC:
         sign = "+ "
-    elif cursor.access_specifier == clang.cindex.AccessSpecifier.PROTECTED:
+    elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.PROTECTED:
         sign = "# "
-    elif cursor.access_specifier == clang.cindex.AccessSpecifier.PRIVATE:
+    elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.PRIVATE:
         sign = "- "
-    elif cursor.access_specifier == clang.cindex.AccessSpecifier.NONE:
+    elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.NONE:
         sign = "~ "
     else:  # elif cursor.access_specifier == clang.cindex.AccessSpecifier.INVALID:
-        print("Warning, receive AccessSpecifier.Invalid for %s obj, var %s" % (ast_obj.name_tmpl, cursor.displayname))
+        print("Warning, receive AccessSpecifier.Invalid for %s obj, from : %s" % (
+            ast_obj.name_tmpl, parent_ast_obj.name_tmpl if parent_ast_obj else None))
         sign = "? "
 
-    return "%s %s : %s" % (sign, cursor.displayname, cursor.type.spelling)
+    return "%s %s : %s" % (sign, ast_obj.name_tmpl, ast_obj.type)
 
 
 # end dot function
@@ -100,7 +101,8 @@ def _find_derived_class(cursor):
 
 def get_variables(cursor):
     lst_kind_var = [clang.cindex.CursorKind.VAR_DECL]
-    return [c_child for c_child in cursor.walk_preorder() if c_child.kind in lst_kind_var]
+    return [Variable(c_child, c_child.location.file.name, store_variable=False) for c_child in cursor.walk_preorder() if
+            c_child.kind in lst_kind_var]
 
 
 def get_annotations(cursor):
@@ -109,34 +111,39 @@ def get_annotations(cursor):
 
 
 class ASTObject(object):
-    def __init__(self, cursor, filename):
+    def __init__(self, cursor, filename=None, store_variable=True):
+        # cursor information
         self.name = cursor.spelling
         self.name_tmpl = cursor.displayname
-        self.file_name = filename
         self.location_file_name = cursor.location.file.name
         self._kind_id = cursor.kind.value
-        # self.annotations = get_annotations(cursor)
         self.mangled_name = cursor.mangled_name
-        self.variable = get_variables(cursor)
+        self._access_specifier = cursor.access_specifier.value
+        self.type = cursor.type.spelling
+
+        self.file_name = filename if filename else self.location_file_name
+        # self.annotations = get_annotations(cursor)
+        self.variable = get_variables(cursor) if store_variable else []
         self.count_variable = len(self.variable)
         self.keywords = None
-        self._cursor = cursor
 
     @property
     def kind(self):
         return clang.cindex.CursorKind.from_id(self._kind_id)
 
+    @property
+    def access_specifier(self):
+        return clang.cindex.AccessSpecifier.from_id(self._access_specifier)
+
 
 class Class(ASTObject):
-    def __init__(self, cursor, filename):
-        super(Class, self).__init__(cursor, filename)
-
-        # self.derived_class = _find_derived_class(self._cursor)
+    def __init__(self, cursor, filename=None):
+        super(Class, self).__init__(cursor, filename=filename)
 
         self.methods = [Method(c_child, filename) for c_child in cursor.get_children() if
                         c_child.kind is clang.cindex.CursorKind.CXX_METHOD]
 
-        self.derived_class = [c_child for c_child in cursor.get_children() if
+        self.derived_class = [Class(c_child) for c_child in cursor.get_children() if
                               c_child.kind is clang.cindex.CursorKind.CXX_BASE_SPECIFIER]
 
         self.namespace_name = cursor.type.spelling
@@ -148,11 +155,13 @@ class Class(ASTObject):
         # example : "{Animal|+ name : string\l+ age : int\l|+ die() : void\l}"
         # if self.derived_class:
         #     self.namespace_name += " - " + str(self.derived_class)
-        return "{%s|%s|%s}" % (self.namespace_name, _get_dot_lst_cursor(self.variable, self), self._get_dot_method())
-
-    def _get_dot_method(self):
-        lst_cursor = [fct._cursor for fct in self.methods]
-        return _get_dot_lst_cursor(lst_cursor, self)
+        msg = "{%s|%s|%s}" % (self.namespace_name,
+                              _get_dot_lst_cursor(self.variable, self),
+                              _get_dot_lst_cursor(self.methods, self))
+        # need to remove bad character
+        msg = msg.replace("<", "\\<")
+        msg = msg.replace(">", "\\>")
+        return msg
 
     def to_string(self):
         # TODO change this to_string. Move this into export.
@@ -177,12 +186,13 @@ class Class(ASTObject):
 
 
 class Function(ASTObject):
-    def __init__(self, cursor, filename):
+    def __init__(self, cursor, filename=None):
+        # TODO keep a link to his parent
         super(Function, self).__init__(cursor, filename)
         self.keywords = get_tokens_statistic(cursor) + collections.Counter(var=self.count_variable)
 
     def get_dot(self):
-        return _get_dot_format(self._cursor, self)
+        return _get_dot_format(self)
 
     def __repr__(self):
         return self.to_string()
@@ -209,6 +219,10 @@ class Method(Function):
 
     def to_string(self):
         return "%s %s" % (self.name, self.keywords.items())
+
+
+class Variable(ASTObject):
+    pass
 
 
 def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
@@ -247,11 +261,15 @@ def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
     return result
 
 
-# def create_class_dict_from_lst_ast_obj(lst_ast_obj):
-#     _filter = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]
-#     # double loop to get all class
-#     return {cls_obj.namespace_name: cls_obj for lst_clang_obj in lst_ast_obj for cls_obj in lst_clang_obj[2] if
-#             cls_obj.kind in _filter}
+def create_class_dict_from_lst_ast_obj(lst_ast_obj):
+    # TODO need to fix class template, need to be merge with his cc file outside of the file :(
+    # _filter = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]
+    _filter = [clang.cindex.CursorKind.CLASS_DECL]
+    # double loop to get all class
+    return {cls_obj.namespace_name: cls_obj for lst_clang_obj in lst_ast_obj for cls_obj in lst_clang_obj[2] if
+            cls_obj.kind in _filter}
+
+
 #
 #
 # def class_completion(lst_ast_obj):

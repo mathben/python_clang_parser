@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from clang_parser import clang
+from clang_parser import create_class_dict_from_lst_ast_obj
 import pygraphviz as pgv
 import csv
 import os
@@ -45,13 +46,12 @@ class ClangParserUML(object):
         self.g.write(self._name + ".dot")
 
     def _add_class_dot(self):
-        _filter = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]
         # double loop to get all class
-        for cls_obj in [cls_obj for lst_clang_obj in self._lst_obj_ast for cls_obj in lst_clang_obj[2] if
-                        cls_obj.kind in _filter]:
+        dct_class_obj = create_class_dict_from_lst_ast_obj(self._lst_obj_ast)
+        for cls_obj in dct_class_obj.values():
             self._add_class_node(cls_obj)
-        for cls_obj in [cls_obj for lst_clang_obj in self._lst_obj_ast for cls_obj in lst_clang_obj[2] if
-                        cls_obj.kind in _filter and cls_obj.derived_class]:
+        # need a first iteration to create node before create edge
+        for cls_obj in dct_class_obj.values():
             self._add_class_base_edge(cls_obj)
 
     def _add_class_node(self, cls_obj):
@@ -59,10 +59,10 @@ class ClangParserUML(object):
 
     def _add_class_base_edge(self, cls_obj):
         for cls_base in cls_obj.derived_class:
-            if not self.g.has_node(cls_base.type.spelling):
+            if not self.g.has_node(cls_base.type):
                 # create a external node
-                self.g.add_node(cls_base.type.spelling, color="yellow")
-            self.g.add_edge(cls_obj.namespace_name, cls_base.type.spelling, arrowhead="empty")
+                self.g.add_node(cls_base.type, color="yellow")
+            self.g.add_edge(cls_obj.namespace_name, cls_base.type, arrowhead="empty")
 
 
 class ClangParserCSV(object):
