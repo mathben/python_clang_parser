@@ -21,27 +21,8 @@ class ClangParserUML(object):
 
         self._add_class_dot()
 
-        # lst_class = ['a', 'b']
-        # lst_class_link = [('a', 'b')]
-        # self.g.add_nodes_from(lst_class)
-        # self.g.add_node('v', label="{Dog||+ bark() : void\l}")
-        # self.g.add_edges_from(lst_class_link)
-        # # n = g.get_node('a')
-
-        self.g.layout(prog='neato')
-        self.g.draw(path=self._name + "_neato.svgz", format='svgz', args='-Gepsilon=1')
-
-        self.g.layout(prog='dot')
-        self.g.draw(path=self._name + "_dot.svgz", format='svgz')
-
-        self.g.layout(prog='twopi')
-        self.g.draw(path=self._name + "_twopi.svgz", format='svgz')
-
         self.g.layout(prog='circo')
         self.g.draw(path=self._name + "_circo.svgz", format='svgz')
-
-        self.g.layout(prog='fdp')
-        self.g.draw(path=self._name + "_fdp.svgz", format='svgz')
 
         self.g.write(self._name + ".dot")
 
@@ -53,6 +34,7 @@ class ClangParserUML(object):
         # need a first iteration to create node before create edge
         for cls_obj in dct_class_obj.values():
             self._add_class_base_edge(cls_obj)
+            self._add_class_composition_edge(cls_obj)
 
     def _add_class_node(self, cls_obj):
         self.g.add_node(cls_obj.namespace_name, label=cls_obj.get_dot())
@@ -61,8 +43,16 @@ class ClangParserUML(object):
         for cls_base in cls_obj.derived_class:
             if not self.g.has_node(cls_base.type):
                 # create a external node
-                self.g.add_node(cls_base.type, color="yellow")
+                self.g.add_node(cls_base.type, color="red")
             self.g.add_edge(cls_obj.namespace_name, cls_base.type, arrowhead="empty")
+
+    def _add_class_composition_edge(self, cls_obj):
+        for var in cls_obj.variable:
+            if not self.g.has_node(var.type):
+                # create a external node
+                # self.g.add_node(var.type, color="red")
+                continue
+            self.g.add_edge(cls_obj.namespace_name, var.type, arrowhead="normal")
 
 
 class ClangParserCSV(object):
