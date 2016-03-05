@@ -3,6 +3,7 @@
 import collections
 import os
 import sys
+import uuid
 
 AST_EXT_FILE = ".ast"
 
@@ -338,6 +339,9 @@ class Statement(ASTObject):
     def __init__(self, cursor):
         super(Statement, self).__init__(cursor, filename=None, store_variable=False)
         self.location = Location(cursor)
+        self.name = get_STMT_name(cursor.kind)
+        self.is_exit = cursor.kind == clang.cindex.CursorKind.RETURN_STMT
+        self.unique_name = uuid.uuid4()
 
 
 def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):

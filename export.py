@@ -6,6 +6,7 @@ from clang_parser import create_class_dict_from_lst_ast_obj
 import pygraphviz as pgv
 import csv
 import os
+import uuid
 
 
 class ClangParserCFG(object):
@@ -17,14 +18,42 @@ class ClangParserCFG(object):
         self.g = pgv.AGraph(name=self._cfg_name, directed=True)
 
     def generate_cfg(self):
-        self.g.node_attr.update(shape='record')
+        self.g.node_attr.update(shape='circle')
 
-        # self._add_method_cfg()
+        self._add_stmt_dot()
 
         self.g.layout(prog='circo')
         self.g.draw(path=self._name + "_circo.svgz", format='svgz')
 
         self.g.write(self._name + ".dot")
+
+    def _add_stmt_dot(self):
+        # double loop to get all class
+        dct_class_obj = create_class_dict_from_lst_ast_obj(self._lst_obj_ast)
+        for cls_obj in dct_class_obj.values():
+            for cls_fct in cls_obj.methods:
+                self._add_node(cls_fct.cfg)
+
+    def _add_node(self, cfg_list, lvl=0, parent_name="Entry main", lst_exit=[]):
+        last_child = None
+        for c, lst_c in cfg_list:
+            label = "Entry main" if not lvl else c.name
+            self.g.add_node(c.unique_name, label=label)
+            self.g.add_edge(parent_name, c.name, arrowhead="normal")
+            if c.is_exit:
+                lst_exit.append(c)
+            self._add_node(lst_c, lvl=lvl + 1, parent_name=c.name, lst_exit=lst_exit)
+            last_child = c
+
+        if not lvl:
+            unique_name = uuid.uuid4()
+            # add exit node
+            self.g.add_node(unique_name, label="Exit main")
+            if lst_exit:
+                for c in lst_exit:
+                    self.g.add_edge(c.unique_name, unique_name, arrowhead="normal")
+            else:
+                self.g.add_edge(last_child.unique_name, unique_name, arrowhead="normal")
 
 
 class ClangParserUML(object):
