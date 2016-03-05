@@ -6,8 +6,21 @@ Python application with Clang python wrapper to parse static code c++
 - Create csv with statistic analyse
 - Parallelism execution
 
+## TODO
+- Load config file to start execution. Contain application argument
+- Add test
+- Serialize/Deserialize python AST
+
 ## Dependency
-python2 and Clang python binding
+python2
+libclang, the Clang python binding
+
+### Ubuntu
+This dependence is to generate the UML
+```{r, engine='bash', count_lines}
+sudo apt-get install python-pip
+sudo python-pip install graphviz
+```
 
 ## Clang
 I choose to compile the code source of Clang, because you can choose the version you need.
