@@ -120,7 +120,7 @@ def validate_parser(_arg_parser):
     # translation unit path saving files
     if _parser.translation_unit_dir:
         if not os.path.isdir(_parser.translation_unit_dir):
-            raise ValueError("--translation_unit_dir '%s' is not a directory path." % _parser.translation_unit_dir)
+            os.makedirs(_parser.translation_unit_dir)
         # use ast file if translation_unit_dir not contain ast file
         _parser.ast_file = glob(os.path.join(_parser.translation_unit_dir, "*" + AST_EXT_FILE))
     else:

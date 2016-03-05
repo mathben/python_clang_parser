@@ -44,8 +44,9 @@ def _get_dot_format(ast_obj, parent_ast_obj=None):
     elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.NONE:
         sign = "~ "
     else:  # elif cursor.access_specifier == clang.cindex.AccessSpecifier.INVALID:
-        print("Warning, receive AccessSpecifier.Invalid for %s obj, from : %s" % (
-            ast_obj.name_tmpl, parent_ast_obj.name_tmpl if parent_ast_obj else None))
+        print("Warning, receive AccessSpecifier.Invalid for %s obj, from : %s. File %s, mangled %s" % (
+            ast_obj.name_tmpl, parent_ast_obj.name_tmpl if parent_ast_obj else None, ast_obj.file_name,
+            ast_obj.mangled_name))
         sign = "? "
 
     return "%s %s : %s" % (sign, ast_obj.name_tmpl, ast_obj.type)
@@ -222,7 +223,8 @@ class Method(Function):
 
 
 class Variable(ASTObject):
-    pass
+    def __init__(self, cursor, filename=None, store_variable=True):
+        super(Variable, self).__init__(cursor, filename=filename, store_variable=store_variable)
 
 
 def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
@@ -334,8 +336,15 @@ def clang_parser(arg):
 
     if _ast_file_exist:
         # load AST
-        _translation_unit = clang.cindex.TranslationUnit.from_ast_file(_ast_file_path, index=_clang_index)
-    else:
+        try:
+            _translation_unit = clang.cindex.TranslationUnit.from_ast_file(_ast_file_path, index=_clang_index)
+        except clang.cindex.TranslationUnitLoadError:
+            # delete and try again
+            print("Warning, cannot load file %s, recreate it." % _ast_file_path)
+            os.remove(_ast_file_path)
+            _ast_file_exist = False
+
+    if not _ast_file_exist:
         # parse to generate AST
         _translation_unit = _clang_index.parse(absolute_file_path, _clang_arg, options=options)
 
