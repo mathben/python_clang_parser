@@ -76,6 +76,10 @@ def parse_args():
     group.add_argument('--generate_uml', default=False, action='store_true',
                        help='Generate UML of relation between class.')
 
+    group = _arg_parser.add_argument_group("Control Flow")
+    group.add_argument('--generate_control_flow', default=False, action='store_true',
+                       help='Generate control flow from main function.')
+
     return _arg_parser
 
 
@@ -218,6 +222,9 @@ if __name__ == '__main__':
 
     if parser.generate_uml:
         export.ClangParserUML(parser, lst_obj_ast).generate_uml()
+
+    if parser.generate_control_flow:
+        export.ClangParserCFG(parser, lst_obj_ast).generate_cfg()
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)

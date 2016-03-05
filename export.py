@@ -8,6 +8,25 @@ import csv
 import os
 
 
+class ClangParserCFG(object):
+    def __init__(self, _parser, _lst_obj_ast):
+        self._parser = _parser
+        self._lst_obj_ast = _lst_obj_ast
+        self._name = os.path.split(_parser.working_path)[1]
+        self._cfg_name = "CFG " + self._name
+        self.g = pgv.AGraph(name=self._cfg_name, directed=True)
+
+    def generate_cfg(self):
+        self.g.node_attr.update(shape='record')
+
+        # self._add_method_cfg()
+
+        self.g.layout(prog='circo')
+        self.g.draw(path=self._name + "_circo.svgz", format='svgz')
+
+        self.g.write(self._name + ".dot")
+
+
 class ClangParserUML(object):
     def __init__(self, _parser, _lst_obj_ast):
         self._parser = _parser

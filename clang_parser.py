@@ -111,6 +111,17 @@ def get_annotations(cursor):
             if c_child.kind == clang.cindex.CursorKind.ANNOTATE_ATTR]
 
 
+class Location(object):
+    def __init__(self, cursor):
+        class File(object):
+            def __init__(self, file_location):
+                self.name = file_location.name
+
+        self.line = cursor.location.line
+        self.column = cursor.location.column
+        self.file = File(cursor.location.file)
+
+
 class ASTObject(object):
     def __init__(self, cursor, filename=None, store_variable=True):
         # cursor information
@@ -186,11 +197,107 @@ class Class(ASTObject):
                 j += 1
 
 
+def find_control_flow(cursor):
+    filter_STMT = [clang.cindex.CursorKind.COMPOUND_STMT,
+                   clang.cindex.CursorKind.CASE_STMT,
+                   clang.cindex.CursorKind.DEFAULT_STMT,
+                   clang.cindex.CursorKind.IF_STMT,
+                   clang.cindex.CursorKind.SWITCH_STMT,
+                   clang.cindex.CursorKind.WHILE_STMT,
+                   clang.cindex.CursorKind.DO_STMT,
+                   clang.cindex.CursorKind.FOR_STMT,
+                   clang.cindex.CursorKind.GOTO_STMT,
+                   clang.cindex.CursorKind.CONTINUE_STMT,
+                   clang.cindex.CursorKind.BREAK_STMT,
+                   clang.cindex.CursorKind.RETURN_STMT,
+                   clang.cindex.CursorKind.CXX_CATCH_STMT,
+                   clang.cindex.CursorKind.CXX_TRY_STMT,
+                   clang.cindex.CursorKind.CXX_FOR_RANGE_STMT
+                   ]
+    # return [(child, find_control_flow(child)) for child in cursor.walk_preorder() if child.kind in filter_STMT]
+    l = []
+    for child in cursor.get_children():
+        if child.kind in filter_STMT:
+            l.append((Statement(child), find_control_flow(child)))
+    return l
+
+
+def has_return(lst_cursor):
+    for c, lst in lst_cursor:
+        if c.kind is clang.cindex.CursorKind.RETURN_STMT:
+            return True
+        if has_return(lst):
+            return True
+    return False
+
+
+def print_control_flow(lst, no_iter=0, parent=None, is_type_void=False):
+    i = 0
+    for cursor, lst_child in lst:
+        is_compound = cursor.kind is clang.cindex.CursorKind.COMPOUND_STMT
+        i += 1
+        location = cursor.location
+        if parent:
+            print("file %s line %s mangled %s" % (location.file.name, location.line, parent.mangled_name))
+            print("%s%s. %s - %s" % (no_iter * "\t", i, "Entry main", parent.displayname))
+        # elif not is_compound:
+        else:
+            print("%s%s. %s - line %s column %s" % (no_iter * "\t", i, get_STMT_name(cursor.kind),
+                                                    location.line, location.column))
+
+        if lst_child:
+            # c_no_inter = no_iter + 1 if not is_compound else no_iter
+            c_no_inter = no_iter + 1
+            print_control_flow(lst_child, no_iter=c_no_inter)
+    if parent and lst:
+        if not is_type_void and not has_return(lst):
+            print("Error, missing return statement.")
+        print("\n")
+
+
+def get_STMT_name(kind):
+    if kind is clang.cindex.CursorKind.COMPOUND_STMT:
+        return "{"
+    if kind is clang.cindex.CursorKind.CASE_STMT:
+        return "case"
+    if kind is clang.cindex.CursorKind.DEFAULT_STMT:
+        return "default"
+    if kind is clang.cindex.CursorKind.IF_STMT:
+        return "if"
+    if kind is clang.cindex.CursorKind.SWITCH_STMT:
+        return "switch"
+    if kind is clang.cindex.CursorKind.WHILE_STMT:
+        return "while"
+    if kind is clang.cindex.CursorKind.DO_STMT:
+        return "do"
+    if kind is clang.cindex.CursorKind.FOR_STMT:
+        return "for"
+    if kind is clang.cindex.CursorKind.GOTO_STMT:
+        return "goto"
+    if kind is clang.cindex.CursorKind.CONTINUE_STMT:
+        return "continue"
+    if kind is clang.cindex.CursorKind.BREAK_STMT:
+        return "break"
+    if kind is clang.cindex.CursorKind.RETURN_STMT:
+        return "return"
+    if kind is clang.cindex.CursorKind.CXX_CATCH_STMT:
+        return "catch"
+    if kind is clang.cindex.CursorKind.CXX_TRY_STMT:
+        return "try"
+    if kind is clang.cindex.CursorKind.CXX_FOR_RANGE_STMT:
+        return "for"
+    return "UNKNOWN"
+
+
 class Function(ASTObject):
     def __init__(self, cursor, filename=None):
         # TODO keep a link to his parent
         super(Function, self).__init__(cursor, filename)
         self.keywords = get_tokens_statistic(cursor) + collections.Counter(var=self.count_variable)
+        self.cfg = find_control_flow(cursor)
+        is_type_void = cursor.result_type.kind is clang.cindex.TypeKind.VOID
+        print(self)
+        print_control_flow(self.cfg, parent=cursor, is_type_void=is_type_void)
 
     def get_dot(self):
         return _get_dot_format(self)
@@ -225,6 +332,12 @@ class Method(Function):
 class Variable(ASTObject):
     def __init__(self, cursor, filename=None, store_variable=True):
         super(Variable, self).__init__(cursor, filename=filename, store_variable=store_variable)
+
+
+class Statement(ASTObject):
+    def __init__(self, cursor):
+        super(Statement, self).__init__(cursor, filename=None, store_variable=False)
+        self.location = Location(cursor)
 
 
 def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
@@ -329,6 +442,7 @@ def clang_parser(arg):
 
     absolute_file_path = os.path.join(_dir_name, _file_name)
     options = clang.cindex.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES if _arg_parser.remove_token else 0
+    options = clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
 
     _obj_c_clang_index = _clang_lib.clang_createIndex(_arg_parser.exclude_decl_from_PCH,
                                                       _arg_parser.show_missing_header_file)

@@ -4,10 +4,24 @@ public:
     int x;
 
     int bar() {
-        if (false)
+        if (false) {
             return 42;
+        } else if (1 == 1) {
+            return 12;
+        } else {
+            return 1;
+        }
         for (int i = 0; i < -1; i++);
         return -1;
+    }
+
+    int bow() {
+        if (false)
+            return 42;
+        else if (1 == 1)
+            return 12;
+        else
+            return 1;
     }
 
 };
