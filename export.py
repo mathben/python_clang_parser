@@ -50,29 +50,51 @@ class ClangParserCFG(object):
         print(
             "Info valid cfg %s %.2f%% on invalid cfg %s." % (count_valid_method, ratio_valid_cfg, count_invalid_method))
 
-    def _add_node(self, cfg_list, cls_fct, lvl=0, parent_name=None, entry_name=None, exit_name=None):
+    def _add_node(self, cfg_list, cls_fct, lvl=0, parent_name=None, end_block_name=None, entry_name=None,
+                  exit_name=None):
         if not entry_name:
             parent_name = entry_name = "%s_entry_%s" % (uuid.uuid4(), cls_fct.name)
             self.g.add_node(entry_name, label="Entry " + cls_fct.name)
 
         if not exit_name:
-            exit_name = "%s_exit_%s" % (uuid.uuid4(), cls_fct.name)
+            end_block_name = exit_name = "%s_exit_%s" % (uuid.uuid4(), cls_fct.name)
             self.g.add_node(exit_name, label="Exit " + cls_fct.name)
 
-        for c, lst_c in cfg_list:
-            child_parent_name = parent_name
-            if c.is_common_stmt():
-                self.g.add_node(c.unique_name, label=c.label())
-                if c.is_return():
-                    self.g.add_edge(c.unique_name, exit_name, arrowhead="normal")
+        for c in cfg_list:
+            self.g.add_node(c.unique_name, label=c.label())
+            self.g.add_edge(parent_name, c.unique_name, arrowhead="normal")
+            child_parent_name = c.unique_name
 
-                self.g.add_edge(parent_name, c.unique_name, arrowhead="normal")
-                child_parent_name = c.unique_name
+            condition_name = None
+            if c.condition:
+                condition_name = "condition_%s" % uuid.uuid4()
+                self.g.add_node(condition_name, label="condition")
+                self.g.add_edge(child_parent_name, condition_name, arrowhead="normal")
 
-            # next level
-            if lst_c:
-                self._add_node(lst_c, cls_fct, lvl=lvl + 1, parent_name=child_parent_name, entry_name=entry_name,
-                               exit_name=exit_name)
+            if c.is_block_stmt():
+                end_block_name = "end_block_%s" % uuid.uuid4()
+                self.g.add_node(end_block_name, label="%sEnd" % c.name)
+
+            if c.stmt_child:
+                previous_name = child_parent_name if not condition_name else condition_name
+                self._add_node(c.stmt_child, cls_fct, lvl=lvl + 1, parent_name=previous_name,
+                               end_block_name=end_block_name, entry_name=entry_name, exit_name=exit_name)
+            if c.stmt_brother:
+                for brother in c.stmt_brother:
+                    brother_name = "%s_%s" % (brother, uuid.uuid4())
+                    self.g.add_node(brother_name, label=brother.name)
+                    self.g.add_edge(child_parent_name, brother_name, arrowhead="normal")
+                    self._add_node(brother.stmt_child, cls_fct, lvl=lvl + 1, parent_name=brother_name,
+                                   end_block_name=end_block_name, entry_name=entry_name, exit_name=exit_name)
+            if c.is_return():
+                self.g.add_edge(c.unique_name, exit_name, arrowhead="normal")
+            elif not c.stmt_child and not c.stmt_brother and c is cfg_list[-1]:
+                self.g.add_edge(c.unique_name, end_block_name, arrowhead="normal")
+
+            if c.is_block_stmt():
+                parent_name = end_block_name
+            else:
+                parent_name = c.unique_name
 
         if not cfg_list and not lvl:
             # no stmt into this function
