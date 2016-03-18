@@ -30,30 +30,53 @@ class ClangParserCFG(object):
     def _add_stmt_dot(self):
         # double loop to get all class
         dct_class_obj = create_class_dict_from_lst_ast_obj(self._lst_obj_ast)
+        count_valid_method = 0
+        count_invalid_method = 0
         for cls_obj in dct_class_obj.values():
             for cls_fct in cls_obj.methods:
-                self._add_node(cls_fct.cfg)
+                if not cls_fct.enable_cfg:
+                    continue
+                if cls_fct.is_valid_cfg:
+                    self._add_node(cls_fct.cfg, cls_fct)
+                    count_valid_method += 1
+                else:
+                    count_invalid_method += 1
+        total_cfg = count_valid_method + count_invalid_method
+        if total_cfg:
+            ratio_valid_cfg = (count_valid_method / float(total_cfg)) * 100
+        else:
+            ratio_valid_cfg = 0.0
 
-    def _add_node(self, cfg_list, lvl=0, parent_name="Entry main", lst_exit=[]):
-        last_child = None
+        print(
+            "Info valid cfg %s %.2f%% on invalid cfg %s." % (count_valid_method, ratio_valid_cfg, count_invalid_method))
+
+    def _add_node(self, cfg_list, cls_fct, lvl=0, parent_name=None, entry_name=None, exit_name=None):
+        if not entry_name:
+            parent_name = entry_name = "%s_entry_%s" % (uuid.uuid4(), cls_fct.name)
+            self.g.add_node(entry_name, label="Entry " + cls_fct.name)
+
+        if not exit_name:
+            exit_name = "%s_exit_%s" % (uuid.uuid4(), cls_fct.name)
+            self.g.add_node(exit_name, label="Exit " + cls_fct.name)
+
         for c, lst_c in cfg_list:
-            label = "Entry main" if not lvl else c.name
-            self.g.add_node(c.unique_name, label=label)
-            self.g.add_edge(parent_name, c.name, arrowhead="normal")
-            if c.is_exit:
-                lst_exit.append(c)
-            self._add_node(lst_c, lvl=lvl + 1, parent_name=c.name, lst_exit=lst_exit)
-            last_child = c
+            child_parent_name = parent_name
+            if c.is_common_stmt():
+                self.g.add_node(c.unique_name, label=c.label())
+                if c.is_return():
+                    self.g.add_edge(c.unique_name, exit_name, arrowhead="normal")
 
-        if not lvl:
-            unique_name = uuid.uuid4()
-            # add exit node
-            self.g.add_node(unique_name, label="Exit main")
-            if lst_exit:
-                for c in lst_exit:
-                    self.g.add_edge(c.unique_name, unique_name, arrowhead="normal")
-            else:
-                self.g.add_edge(last_child.unique_name, unique_name, arrowhead="normal")
+                self.g.add_edge(parent_name, c.unique_name, arrowhead="normal")
+                child_parent_name = c.unique_name
+
+            # next level
+            if lst_c:
+                self._add_node(lst_c, cls_fct, lvl=lvl + 1, parent_name=child_parent_name, entry_name=entry_name,
+                               exit_name=exit_name)
+
+        if not cfg_list and not lvl:
+            # no stmt into this function
+            self.g.add_edge(entry_name, exit_name, arrowhead="normal")
 
 
 class ClangParserUML(object):
