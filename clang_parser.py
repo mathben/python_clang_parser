@@ -17,118 +17,23 @@ _clang_lib = clang.cindex.conf.lib
 
 CLANG_DEFAULT_ARG = ['-x', 'c++', '-std=c++11', '-I/opt/llvm/build/lib/clang/3.7.1/include']
 
-filter_stmt = [clang.cindex.CursorKind.COMPOUND_STMT,
-               clang.cindex.CursorKind.CASE_STMT,
-               clang.cindex.CursorKind.DEFAULT_STMT,
-               clang.cindex.CursorKind.IF_STMT,
-               clang.cindex.CursorKind.SWITCH_STMT,
-               clang.cindex.CursorKind.WHILE_STMT,
-               clang.cindex.CursorKind.DO_STMT,
-               clang.cindex.CursorKind.FOR_STMT,
-               clang.cindex.CursorKind.GOTO_STMT,
-               clang.cindex.CursorKind.CONTINUE_STMT,
-               clang.cindex.CursorKind.BREAK_STMT,
-               clang.cindex.CursorKind.RETURN_STMT,
-               clang.cindex.CursorKind.CXX_CATCH_STMT,
-               clang.cindex.CursorKind.CXX_TRY_STMT,
-               clang.cindex.CursorKind.CXX_FOR_RANGE_STMT
-               ]
-
-
-# dot function
-def _get_dot_lst_cursor(lst_ast_obj, parent_ast_obj):
-    char_new_line = "\\l"
-    # example : "+ name : string\l+ age : int\l"
-    # or empty : ""
-    str_var = char_new_line.join([_get_dot_format(var, parent_ast_obj) for var in lst_ast_obj])
-    if str_var:
-        str_var += char_new_line
-    return str_var
-
-
-def _get_dot_format(ast_obj, parent_ast_obj=None):
-    # example : "+ name : string"
-    #
-    # + Public
-    # - Private
-    # # Protected
-    # ~ Package (default visibility)
-
-    if ast_obj.access_specifier == clang.cindex.AccessSpecifier.PUBLIC:
-        sign = "+ "
-    elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.PROTECTED:
-        sign = "# "
-    elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.PRIVATE:
-        sign = "- "
-    elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.NONE:
-        sign = "~ "
-    else:  # elif cursor.access_specifier == clang.cindex.AccessSpecifier.INVALID:
-        print("Warning, receive AccessSpecifier.Invalid for %s obj, from : %s. File %s, mangled %s" % (
-            ast_obj.name_tmpl, parent_ast_obj.name_tmpl if parent_ast_obj else None, ast_obj.file_name,
-            ast_obj.mangled_name))
-        sign = "? "
-
-    return "%s %s : %s" % (sign, ast_obj.name_tmpl, ast_obj.type)
-
-
-# end dot function
-
-
-def get_tokens_statistic(cursor):
-    # TODO to get else if, check if offset is inside of 5. c_child.location.offset
-    lst_token_key = ["if", "else", "else if", "switch", "case", "while", "for", "break", "continue", "return", "using",
-                     "try", "catch"]
-    lst_token = [c_child.spelling for c_child in cursor.get_tokens() if
-                 c_child.kind is clang.cindex.TokenKind.KEYWORD and c_child.spelling in lst_token_key]
-    return collections.Counter(lst_token)
-
-
-def _find_derived_class(cursor):
-    # the cursor need to be a class
-    # iterate in token
-    # stop iteration when meet '{'
-    # store class name after ':'
-    # remove reserved word like public, private
-    end_key = "{"
-    begin_store_key = ":"
-    new_class_key = ","
-    begin_store = False
-    reserved_word = ["public", "private"]
-    lst_token = []
-    word_completion = ""
-    for token in cursor.get_tokens():
-        word = token.spelling
-
-        # end iterate condition
-        if word == end_key:
-            if word_completion:
-                lst_token.append(word_completion)
-            return lst_token
-
-        # begin store condition
-        if not begin_store:
-            if word == begin_store_key:
-                begin_store = True
-            continue
-
-        # another derived class
-        if word == new_class_key:
-            lst_token.append(word_completion)
-            continue
-
-        if word not in reserved_word:
-            word_completion += word
-
-
-def get_variables(cursor):
-    lst_kind_var = [clang.cindex.CursorKind.VAR_DECL]
-    return [Variable(c_child, c_child.location.file.name, store_variable=False) for c_child in cursor.walk_preorder() if
-            c_child.kind in lst_kind_var]
-
-
-def get_annotations(cursor):
-    return [c_child.displayname for c_child in cursor.get_children()
-            if c_child.kind == clang.cindex.CursorKind.ANNOTATE_ATTR]
+dct_alias_stmt = {
+    clang.cindex.CursorKind.COMPOUND_STMT: "{...}",
+    clang.cindex.CursorKind.CASE_STMT: "case",
+    clang.cindex.CursorKind.DEFAULT_STMT: "default",
+    clang.cindex.CursorKind.IF_STMT: "if",
+    clang.cindex.CursorKind.SWITCH_STMT: "switch",
+    clang.cindex.CursorKind.WHILE_STMT: "while",
+    clang.cindex.CursorKind.DO_STMT: "do",
+    clang.cindex.CursorKind.FOR_STMT: "for",
+    clang.cindex.CursorKind.GOTO_STMT: "goto",
+    clang.cindex.CursorKind.CONTINUE_STMT: "continue",
+    clang.cindex.CursorKind.BREAK_STMT: "break",
+    clang.cindex.CursorKind.RETURN_STMT: "return",
+    clang.cindex.CursorKind.CXX_CATCH_STMT: "catch",
+    clang.cindex.CursorKind.CXX_TRY_STMT: "try",
+    clang.cindex.CursorKind.CXX_FOR_RANGE_STMT: "for",
+}
 
 
 class File(object):
@@ -155,8 +60,8 @@ class ASTObject(object):
         self.type = cursor.type.spelling
 
         self.file_name = filename if filename else self.location.file.name
-        # self.annotations = get_annotations(cursor)
-        self.variable = get_variables(cursor) if store_variable else []
+        # self.annotations = ASTObject.get_annotations(cursor)
+        self.variable = ASTObject.get_variables(cursor) if store_variable else []
         self.count_variable = len(self.variable)
         self.keywords = None
 
@@ -167,6 +72,43 @@ class ASTObject(object):
     @property
     def access_specifier(self):
         return clang.cindex.AccessSpecifier.from_id(self._access_specifier)
+
+    @staticmethod
+    def _get_dot_format(ast_obj, parent_ast_obj=None):
+        # example : "+ name : string"
+        #
+        # + Public
+        # - Private
+        # # Protected
+        # ~ Package (default visibility)
+
+        if ast_obj.access_specifier == clang.cindex.AccessSpecifier.PUBLIC:
+            sign = "+ "
+        elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.PROTECTED:
+            sign = "# "
+        elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.PRIVATE:
+            sign = "- "
+        elif ast_obj.access_specifier == clang.cindex.AccessSpecifier.NONE:
+            sign = "~ "
+        else:  # elif cursor.access_specifier == clang.cindex.AccessSpecifier.INVALID:
+            print("Warning, receive AccessSpecifier.Invalid for %s obj, from : %s. File %s, mangled %s" % (
+                ast_obj.name_tmpl, parent_ast_obj.name_tmpl if parent_ast_obj else None, ast_obj.file_name,
+                ast_obj.mangled_name))
+            sign = "? "
+
+        return "%s %s : %s" % (sign, ast_obj.name_tmpl, ast_obj.type)
+
+    @staticmethod
+    def get_variables(cursor):
+        lst_kind_var = [clang.cindex.CursorKind.VAR_DECL]
+        return [Variable(c_child, c_child.location.file.name, store_variable=False) for c_child in
+                cursor.walk_preorder() if
+                c_child.kind in lst_kind_var]
+
+        # @staticmethod
+        # def get_annotations(cursor):
+        #     return [c_child.displayname for c_child in cursor.get_children()
+        #             if c_child.kind == clang.cindex.CursorKind.ANNOTATE_ATTR]
 
 
 class Class(ASTObject):
@@ -189,12 +131,23 @@ class Class(ASTObject):
         # if self.derived_class:
         #     self.namespace_name += " - " + str(self.derived_class)
         msg = "{%s|%s|%s}" % (self.namespace_name,
-                              _get_dot_lst_cursor(self.variable, self),
-                              _get_dot_lst_cursor(self.methods, self))
+                              Class._get_dot_lst_cursor(self.variable, self),
+                              Class._get_dot_lst_cursor(self.methods, self))
         # need to remove bad character
         msg = msg.replace("<", "\\<")
         msg = msg.replace(">", "\\>")
         return msg
+
+    # dot function
+    @staticmethod
+    def _get_dot_lst_cursor(lst_ast_obj, parent_ast_obj):
+        char_new_line = "\\l"
+        # example : "+ name : string\l+ age : int\l"
+        # or empty : ""
+        str_var = char_new_line.join([ASTObject._get_dot_format(var, parent_ast_obj) for var in lst_ast_obj])
+        if str_var:
+            str_var += char_new_line
+        return str_var
 
     def to_string(self):
         # TODO change this to_string. Move this into export.
@@ -218,56 +171,11 @@ class Class(ASTObject):
                 j += 1
 
 
-def has_return(lst_cursor):
-    for c in lst_cursor:
-        if c.kind is clang.cindex.CursorKind.RETURN_STMT:
-            return True
-        if has_return(c.stmt_brother):
-            return True
-        if has_return(c.stmt_child):
-            return True
-    return False
-
-
-def get_stmt_name(kind):
-    if kind is clang.cindex.CursorKind.COMPOUND_STMT:
-        return "{...}"
-    if kind is clang.cindex.CursorKind.CASE_STMT:
-        return "case"
-    if kind is clang.cindex.CursorKind.DEFAULT_STMT:
-        return "default"
-    if kind is clang.cindex.CursorKind.IF_STMT:
-        return "if"
-    if kind is clang.cindex.CursorKind.SWITCH_STMT:
-        return "switch"
-    if kind is clang.cindex.CursorKind.WHILE_STMT:
-        return "while"
-    if kind is clang.cindex.CursorKind.DO_STMT:
-        return "do"
-    if kind is clang.cindex.CursorKind.FOR_STMT:
-        return "for"
-    if kind is clang.cindex.CursorKind.GOTO_STMT:
-        return "goto"
-    if kind is clang.cindex.CursorKind.CONTINUE_STMT:
-        return "continue"
-    if kind is clang.cindex.CursorKind.BREAK_STMT:
-        return "break"
-    if kind is clang.cindex.CursorKind.RETURN_STMT:
-        return "return"
-    if kind is clang.cindex.CursorKind.CXX_CATCH_STMT:
-        return "catch"
-    if kind is clang.cindex.CursorKind.CXX_TRY_STMT:
-        return "try"
-    if kind is clang.cindex.CursorKind.CXX_FOR_RANGE_STMT:
-        return "for"
-    return "UNKNOWN"
-
-
 class Function(ASTObject):
     def __init__(self, cursor, filename=None):
         # TODO keep a link to his parent
         super(Function, self).__init__(cursor, filename)
-        self.keywords_stmt = get_tokens_statistic(cursor)
+        self.keywords_stmt = Function.get_tokens_statistic(cursor)
         self.keywords = self.keywords_stmt + collections.Counter(var=self.count_variable)
         self.is_valid_cfg = False
         self.enable_cfg = False
@@ -283,10 +191,31 @@ class Function(ASTObject):
             self.cfg = []
 
     def get_dot(self):
-        return _get_dot_format(self)
+        return ASTObject._get_dot_format(self)
 
     def __repr__(self):
         return self.to_string()
+
+    @staticmethod
+    def get_tokens_statistic(cursor):
+        # TODO to get else if, check if offset is inside of 5. c_child.location.offset
+        lst_token_key = ["if", "else", "else if", "switch", "case", "while", "for", "break", "continue", "return",
+                         "using",
+                         "try", "catch"]
+        lst_token = [c_child.spelling for c_child in cursor.get_tokens() if
+                     c_child.kind is clang.cindex.TokenKind.KEYWORD and c_child.spelling in lst_token_key]
+        return collections.Counter(lst_token)
+
+    @staticmethod
+    def has_return(lst_cursor):
+        for c in lst_cursor:
+            if c.kind is clang.cindex.CursorKind.RETURN_STMT:
+                return True
+            if Function.has_return(c.stmt_brother):
+                return True
+            if Function.has_return(c.stmt_child):
+                return True
+        return False
 
     def to_string(self):
         # file_str = "File %s\n" % self.file_name
@@ -311,7 +240,7 @@ class Function(ASTObject):
         if not start_stmt_cursor:
             return []
         return [Statement(child, count_stmt=self.lst_cfg) for child in start_stmt_cursor[0].get_children() if
-                child.kind in filter_stmt]
+                child.kind in dct_alias_stmt.keys()]
 
     def merge(self, fct):
         if not isinstance(fct, Function):
@@ -339,7 +268,7 @@ class Function(ASTObject):
                 i += 1
 
         if parent and lst:
-            if not is_type_void and not has_return(lst):
+            if not is_type_void and not Function.has_return(lst):
                 print("Error, missing return statement.")
 
     def validate_stmt(self):
@@ -373,7 +302,7 @@ class Variable(ASTObject):
 class Statement(ASTObject):
     def __init__(self, cursor, force_name=None, count_stmt=None):
         super(Statement, self).__init__(cursor, filename=None, store_variable=False)
-        self.name = get_stmt_name(cursor.kind) if not force_name else force_name
+        self.name = Statement.get_stmt_name(cursor.kind) if not force_name else force_name
         self.unique_name = uuid.uuid4()
         self.stmt_brother = []
         self.stmt_child = []
@@ -418,7 +347,7 @@ class Statement(ASTObject):
                     self.stmt_brother.append(stmt)
 
             else:
-                if child.kind not in filter_stmt:
+                if child.kind not in dct_alias_stmt.keys():
                     continue
 
                 # first compound found or another STMT is child
@@ -487,6 +416,13 @@ class Statement(ASTObject):
     def __repr__(self):
         return "\"%s\"" % self.name
 
+    @staticmethod
+    def get_stmt_name(kind):
+        stmt = dct_alias_stmt.get(kind)
+        if not stmt:
+            return "UNKNOWN"
+        return stmt
+
 
 def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
     result = []
@@ -531,18 +467,6 @@ def create_class_dict_from_lst_ast_obj(lst_ast_obj):
     # double loop to get all class
     return {cls_obj.namespace_name: cls_obj for lst_clang_obj in lst_ast_obj for cls_obj in lst_clang_obj[2] if
             cls_obj.kind in _filter}
-
-
-#
-#
-# def class_completion(lst_ast_obj):
-#     dct_cls = create_class_dict_from_lst_ast_obj(lst_ast_obj)
-#
-#     # loop in class and update reference
-#     # update derived class
-#     for ast_name, ast_cls in dct_cls.items():
-#         for str_derived_cls in ast_cls.derived_class:
-#             print(ast_cls.name)
 
 
 def merge_method(lst_method):
