@@ -1,8 +1,8 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
-from clang_parser import clang
-from clang_parser import create_class_dict_from_lst_ast_obj
+from ast.clang_parser import clang
+from ast.ast import create_class_dict_from_lst_ast_obj
 import pygraphviz as pgv
 import csv
 import os
