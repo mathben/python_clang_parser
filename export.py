@@ -1,12 +1,12 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
-from ast.clang_parser import clang
-from ast.ast import create_class_dict_from_lst_ast_obj
 import pygraphviz as pgv
 import csv
 import os
-import uuid
+
+from ast.clang_parser import clang
+from ast.ast import create_class_dict_from_lst_ast_obj
 
 
 class ClangParserCFG(object):
@@ -37,7 +37,7 @@ class ClangParserCFG(object):
                 if not cls_fct.enable_cfg:
                     continue
                 if cls_fct.is_valid_cfg:
-                    self._add_node(cls_fct.cfg, cls_fct)
+                    self._add_node(cls_fct.cfg)
                     count_valid_method += 1
                 else:
                     count_invalid_method += 1
@@ -50,7 +50,7 @@ class ClangParserCFG(object):
         print(
             "Info valid cfg %s %.2f%% on invalid cfg %s." % (count_valid_method, ratio_valid_cfg, count_invalid_method))
 
-    def _add_node(self, cfg, cls_fct):
+    def _add_node(self, cfg):
         label = cfg.label() if not cfg.method_obj else "Entry " + cfg.label()
         self.g.add_node(cfg.unique_name, label=label)
 
@@ -77,7 +77,7 @@ class ClangParserCFG(object):
                 last_unique_name = last_child.unique_name
 
             self.g.add_edge(last_unique_name, c.unique_name, arrowhead="normal")
-            self._add_node(c, cls_fct)
+            self._add_node(c)
 
             last_child = c
 

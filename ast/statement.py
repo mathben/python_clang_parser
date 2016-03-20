@@ -4,6 +4,7 @@
 import uuid
 
 from ast_object import ASTObject
+from clang_parser import clang
 from location import Location
 import util
 
@@ -60,8 +61,13 @@ class Statement(ASTObject):
 
     def _fill_statement(self, cursor, count_stmt=None, stack_parent=None):
         if self.is_block_stmt() or self.method_obj:
-            end_location = Location(cursor.extent.end)
-            self.end_stmt = FakeStatement("end " + self.name, begin_stmt=self, location=end_location)
+            # else and else if support
+            if stack_parent[-1].kind is clang.cindex.CursorKind.IF_STMT:
+                # get end_stmt of his parent
+                self.end_stmt = stack_parent[-1].end_stmt
+            else:
+                end_location = Location(cursor.extent.end)
+                self.end_stmt = FakeStatement("end " + self.name, begin_stmt=self, location=end_location)
 
         if self.is_return():
             self.next_stmt = stack_parent[0].end_stmt
@@ -69,18 +75,18 @@ class Statement(ASTObject):
         if not self.method_obj:
             stack_parent.append(self)
 
-        i = 0
-        # child_lst_size = len(cursor.get_children())
         stmt = None
         lst_child = list(cursor.get_children())
         for child in lst_child:
-            is_condition = not i and cursor.kind in util.dct_alias_condition_stmt.keys()
+            # condition is first item of child and need to be a condition stmt
+            is_condition = not stmt and cursor.kind in util.dct_alias_condition_stmt.keys()
             stmt = Statement(child, count_stmt=count_stmt, is_condition=is_condition, stack_parent=stack_parent)
             self.stmt_child.append(stmt)
 
-            i += 1
         # get the last stmt of child to point on his parent
-        if stmt and not stmt.next_stmt and not stmt.is_unknown and stmt.kind not in util.dct_alias_compound_stmt.keys():
+        if stmt and not stmt.next_stmt and not stmt.is_unknown \
+                and stmt.kind not in util.dct_alias_compound_stmt.keys()\
+                and stmt.kind in util.dct_alias_operator_stmt:
             stmt.next_stmt = stack_parent[-2].end_stmt
 
         stack_parent.pop()
