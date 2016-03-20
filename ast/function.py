@@ -24,6 +24,7 @@ class Function(ASTObject):
             self.cfg = self._find_control_flow(cursor)
             is_type_void = cursor.result_type.kind is clang.cindex.TypeKind.VOID
             self.print_control_flow(self.cfg, is_type_void=is_type_void)
+            # TODO add validation stmt, need to identify else stmt
             # self.validate_stmt()
             print("\n")
             self.enable_cfg = True
@@ -69,7 +70,7 @@ class Function(ASTObject):
             return []
 
         # find first compound of function and get child control flow
-        start_stmt_cursor = [c for c in cursor.get_children() if c.kind in util.dct_alias_compound_stmt.keys()]
+        start_stmt_cursor = [c for c in cursor.get_children() if c.kind in util.dct_alias_compound_stmt]
         if len(start_stmt_cursor) != 1:
             print("Error, cannot find stmt child into function %s" % self)
             return None

@@ -6,7 +6,7 @@ import csv
 import os
 
 from ast.clang_parser import clang
-from ast.ast import create_class_dict_from_lst_ast_obj
+from ast import ast
 
 
 class ClangParserCFG(object):
@@ -29,34 +29,37 @@ class ClangParserCFG(object):
 
     def _add_stmt_dot(self):
         # double loop to get all class
-        dct_class_obj = create_class_dict_from_lst_ast_obj(self._lst_obj_ast)
+        lst_fct_obj = ast.create_function_list_from_lst_ast_obj(self._lst_obj_ast)
         count_valid_method = 0
         count_invalid_method = 0
-        for cls_obj in dct_class_obj.values():
-            for cls_fct in cls_obj.methods:
-                if not cls_fct.enable_cfg:
-                    continue
-                if cls_fct.is_valid_cfg:
-                    self._add_node(cls_fct.cfg)
-                    count_valid_method += 1
-                else:
-                    count_invalid_method += 1
+        for fct_obj in lst_fct_obj:
+            if not fct_obj.enable_cfg:
+                continue
+            if fct_obj.is_valid_cfg:
+                # create cfg node here!
+                self._add_node(fct_obj.cfg)
+                count_valid_method += 1
+            else:
+                count_invalid_method += 1
         total_cfg = count_valid_method + count_invalid_method
         if total_cfg:
             ratio_valid_cfg = (count_valid_method / float(total_cfg)) * 100
         else:
             ratio_valid_cfg = 0.0
 
-        print(
-            "Info valid cfg %s %.2f%% on invalid cfg %s." % (count_valid_method, ratio_valid_cfg, count_invalid_method))
+        print("Info valid cfg %s %.2f%% on invalid cfg %s." % (count_valid_method, ratio_valid_cfg,
+                                                               count_invalid_method))
 
     def _add_node(self, cfg):
-        label = cfg.label() if not cfg.method_obj else "Entry " + cfg.label()
+        label = cfg.label() if not cfg.is_root() else "Entry " + cfg.label()
         self.g.add_node(cfg.unique_name, label=label)
 
         if cfg.end_stmt:
-            label = cfg.end_stmt.label() if not cfg.method_obj else "Exit " + cfg.end_stmt.label()
-            self.g.add_node(cfg.end_stmt.unique_name, label=label)
+            end_stmt = cfg.end_stmt
+            label = end_stmt.label() if not cfg.is_root() else "Exit " + end_stmt.label()
+            self.g.add_node(end_stmt.unique_name, label=label)
+            if end_stmt.next_stmt:
+                self.g.add_edge(end_stmt.unique_name, end_stmt.next_stmt.unique_name, arrowhead="normal")
 
         if cfg.next_stmt:
             self.g.add_edge(cfg.unique_name, cfg.next_stmt.unique_name, arrowhead="normal")
@@ -81,7 +84,7 @@ class ClangParserCFG(object):
 
             last_child = c
 
-        if not cfg.stmt_child and cfg.method_obj:
+        if not cfg.stmt_child and cfg.is_root():
             # link together if no child and first level
             self.g.add_edge(cfg.unique_name, cfg.end_stmt.unique_name, arrowhead="normal")
 
@@ -106,7 +109,7 @@ class ClangParserUML(object):
 
     def _add_class_dot(self):
         # double loop to get all class
-        dct_class_obj = create_class_dict_from_lst_ast_obj(self._lst_obj_ast)
+        dct_class_obj = ast.create_class_dict_from_lst_ast_obj(self._lst_obj_ast)
         for cls_obj in dct_class_obj.values():
             self._add_class_node(cls_obj)
         # need a first iteration to create node before create edge

@@ -57,6 +57,17 @@ def create_class_dict_from_lst_ast_obj(lst_ast_obj):
             cls_obj.kind in _filter}
 
 
+def create_function_list_from_lst_ast_obj(lst_ast_obj):
+    _filter = [clang.cindex.CursorKind.FUNCTION_DECL]
+
+    # get all method from class/namespace
+    lst_met = [met_obj for cls_obj in create_class_dict_from_lst_ast_obj(lst_ast_obj).values()
+               for met_obj in cls_obj.methods]
+    # get all function outside of class
+    lst_fct = [fct_obj for lst_clang_obj in lst_ast_obj for fct_obj in lst_clang_obj[2] if fct_obj.kind in _filter]
+    return lst_fct + lst_met
+
+
 def merge_method(lst_method):
     result = []
     for new_method in lst_method:

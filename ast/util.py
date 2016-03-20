@@ -44,8 +44,31 @@ dct_alias_condition_stmt = {
     clang.cindex.CursorKind.CXX_CATCH_STMT: "catch",
 }
 
+dct_alias_loop_stmt = {
+    clang.cindex.CursorKind.CXX_FOR_RANGE_STMT: "for",
+    clang.cindex.CursorKind.FOR_STMT: "for",
+    clang.cindex.CursorKind.WHILE_STMT: "while",
+    clang.cindex.CursorKind.DO_STMT: "do",
+}
+
 dct_alias_return_stmt = {
     clang.cindex.CursorKind.RETURN_STMT: "return",
+}
+
+dct_alias_affected_break_stmt = {
+    clang.cindex.CursorKind.SWITCH_STMT: "switch",
+    clang.cindex.CursorKind.DO_STMT: "do",
+    clang.cindex.CursorKind.CXX_FOR_RANGE_STMT: "for",
+    clang.cindex.CursorKind.FOR_STMT: "for",
+    clang.cindex.CursorKind.WHILE_STMT: "while",
+}
+
+dct_alias_break_stmt = {
+    clang.cindex.CursorKind.BREAK_STMT: "break",
+}
+
+dct_alias_continue_stmt = {
+    clang.cindex.CursorKind.CONTINUE_STMT: "continue",
 }
 
 dct_alias_block_stmt = {
@@ -56,6 +79,7 @@ dct_alias_block_stmt = {
     clang.cindex.CursorKind.CXX_TRY_STMT: "try",
     clang.cindex.CursorKind.CXX_FOR_RANGE_STMT: "for",
     clang.cindex.CursorKind.FOR_STMT: "for",
+    clang.cindex.CursorKind.WHILE_STMT: "while",
     clang.cindex.CursorKind.IF_STMT: "if",
 }
 
