@@ -65,31 +65,19 @@ class ClangParserCFG(object):
             self.g.add_edge(parent_name, c.unique_name, arrowhead="normal")
             child_parent_name = c.unique_name
 
-            condition_name = None
-            if c.condition:
-                condition_name = "condition_%s" % uuid.uuid4()
-                self.g.add_node(condition_name, label="condition")
-                self.g.add_edge(child_parent_name, condition_name, arrowhead="normal")
-
             if c.is_block_stmt():
                 end_block_name = "end_block_%s" % uuid.uuid4()
                 self.g.add_node(end_block_name, label="%sEnd" % c.name)
 
-            if c.stmt_child:
-                previous_name = child_parent_name if not condition_name else condition_name
-                self._add_node(c.stmt_child, cls_fct, lvl=lvl + 1, parent_name=previous_name,
-                               end_block_name=end_block_name, entry_name=entry_name, exit_name=exit_name)
-            if c.stmt_brother:
-                for brother in c.stmt_brother:
-                    brother_name = "%s_%s" % (brother, uuid.uuid4())
-                    self.g.add_node(brother_name, label=brother.name)
-                    self.g.add_edge(child_parent_name, brother_name, arrowhead="normal")
-                    self._add_node(brother.stmt_child, cls_fct, lvl=lvl + 1, parent_name=brother_name,
-                                   end_block_name=end_block_name, entry_name=entry_name, exit_name=exit_name)
             if c.is_return():
                 self.g.add_edge(c.unique_name, exit_name, arrowhead="normal")
-            elif not c.stmt_child and not c.stmt_brother and c is cfg_list[-1]:
+            elif not c.stmt_child and c is cfg_list[-1]:
                 self.g.add_edge(c.unique_name, end_block_name, arrowhead="normal")
+            elif c.stmt_child and not c.is_operator():
+                # previous_name = child_parent_name if not condition_name else condition_name
+                previous_name = child_parent_name
+                self._add_node(c.stmt_child, cls_fct, lvl=lvl + 1, parent_name=previous_name,
+                               end_block_name=end_block_name, entry_name=entry_name, exit_name=exit_name)
 
             if c.is_block_stmt():
                 parent_name = end_block_name

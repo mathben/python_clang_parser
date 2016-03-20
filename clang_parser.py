@@ -17,23 +17,77 @@ _clang_lib = clang.cindex.conf.lib
 
 CLANG_DEFAULT_ARG = ['-x', 'c++', '-std=c++11', '-I/opt/llvm/build/lib/clang/3.7.1/include']
 
-dct_alias_stmt = {
+
+def merge_all_dicts(lst_dct):
+    if not lst_dct:
+        return {}
+    first_dct = lst_dct[0]
+    for dct in lst_dct[1:]:
+        first_dct = merge_two_dicts(first_dct, dct)
+    return first_dct
+
+
+def merge_two_dicts(x, y):
+    """Given two dicts, merge them into a new dict as a shallow copy."""
+    z = x.copy()
+    z.update(y)
+    return z
+
+
+dct_alias_operator_stmt = {
+    clang.cindex.CursorKind.DECL_STMT: "declare",
+    clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
+}
+
+dct_alias_hide_child_stmt = {
+    clang.cindex.CursorKind.DECL_STMT: "declare",
+    clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
+    clang.cindex.CursorKind.RETURN_STMT: "return",
+}
+
+dct_alias_compound_stmt = {
     clang.cindex.CursorKind.COMPOUND_STMT: "{...}",
+}
+
+dct_alias_condition_stmt = {
+    clang.cindex.CursorKind.CXX_FOR_RANGE_STMT: "for",
+    clang.cindex.CursorKind.FOR_STMT: "for",
+    clang.cindex.CursorKind.CASE_STMT: "case",
+    clang.cindex.CursorKind.IF_STMT: "if",
+    clang.cindex.CursorKind.WHILE_STMT: "while",
+    clang.cindex.CursorKind.CXX_CATCH_STMT: "catch",
+}
+
+dct_alias_return_stmt = {
+    clang.cindex.CursorKind.RETURN_STMT: "return",
+}
+
+dct_alias_block_stmt = {
     clang.cindex.CursorKind.CASE_STMT: "case",
     clang.cindex.CursorKind.DEFAULT_STMT: "default",
-    clang.cindex.CursorKind.IF_STMT: "if",
     clang.cindex.CursorKind.SWITCH_STMT: "switch",
-    clang.cindex.CursorKind.WHILE_STMT: "while",
     clang.cindex.CursorKind.DO_STMT: "do",
+    clang.cindex.CursorKind.CXX_TRY_STMT: "try",
+    clang.cindex.CursorKind.CXX_FOR_RANGE_STMT: "for",
     clang.cindex.CursorKind.FOR_STMT: "for",
+    clang.cindex.CursorKind.IF_STMT: "if",
+}
+
+dct_alias_directive_stmt = {
+    clang.cindex.CursorKind.DEFAULT_STMT: "default",
+    clang.cindex.CursorKind.SWITCH_STMT: "switch",
+    clang.cindex.CursorKind.DO_STMT: "do",
     clang.cindex.CursorKind.GOTO_STMT: "goto",
     clang.cindex.CursorKind.CONTINUE_STMT: "continue",
     clang.cindex.CursorKind.BREAK_STMT: "break",
     clang.cindex.CursorKind.RETURN_STMT: "return",
-    clang.cindex.CursorKind.CXX_CATCH_STMT: "catch",
     clang.cindex.CursorKind.CXX_TRY_STMT: "try",
-    clang.cindex.CursorKind.CXX_FOR_RANGE_STMT: "for",
 }
+
+dct_alias_common_stmt = merge_two_dicts(dct_alias_condition_stmt, dct_alias_directive_stmt)
+
+lst_alias_dct = [dct_alias_operator_stmt, dct_alias_directive_stmt, dct_alias_compound_stmt, dct_alias_condition_stmt]
+dct_alias_stmt = merge_all_dicts(lst_alias_dct)
 
 
 class File(object):
@@ -42,25 +96,25 @@ class File(object):
 
 
 class Location(object):
-    def __init__(self, cursor):
-        self.line = cursor.location.line
-        self.column = cursor.location.column
-        self.file = File(cursor.location.file)
+    def __init__(self, location):
+        self.line = location.line
+        self.column = location.column
+        self.file = File(location.file)
 
 
 class ASTObject(object):
     def __init__(self, cursor, filename=None, store_variable=True):
         # cursor information
         self.name = cursor.spelling
+        self.spelling = cursor.spelling
         self.name_tmpl = cursor.displayname
-        self.location = Location(cursor)
+        self.location = Location(cursor.location)
         self._kind_id = cursor.kind.value
         self.mangled_name = cursor.mangled_name
         self._access_specifier = cursor.access_specifier.value
         self.type = cursor.type.spelling
 
         self.file_name = filename if filename else self.location.file.name
-        # self.annotations = ASTObject.get_annotations(cursor)
         self.variable = ASTObject.get_variables(cursor) if store_variable else []
         self.count_variable = len(self.variable)
         self.keywords = None
@@ -104,11 +158,6 @@ class ASTObject(object):
         return [Variable(c_child, c_child.location.file.name, store_variable=False) for c_child in
                 cursor.walk_preorder() if
                 c_child.kind in lst_kind_var]
-
-        # @staticmethod
-        # def get_annotations(cursor):
-        #     return [c_child.displayname for c_child in cursor.get_children()
-        #             if c_child.kind == clang.cindex.CursorKind.ANNOTATE_ATTR]
 
 
 class Class(ASTObject):
@@ -177,14 +226,15 @@ class Function(ASTObject):
         super(Function, self).__init__(cursor, filename)
         self.keywords_stmt = Function.get_tokens_statistic(cursor)
         self.keywords = self.keywords_stmt + collections.Counter(var=self.count_variable)
-        self.is_valid_cfg = False
+        # self.is_valid_cfg = False
+        self.is_valid_cfg = True
         self.enable_cfg = False
         self.lst_cfg = collections.Counter()
-        if filename in cursor.location.file.name and not cursor.is_virtual_method():
+        if filename in cursor.location.file.name:  # and not cursor.is_virtual_method():
             self.cfg = self._find_control_flow(cursor)
             is_type_void = cursor.result_type.kind is clang.cindex.TypeKind.VOID
             self.print_control_flow(self.cfg, parent=cursor, is_type_void=is_type_void)
-            self.validate_stmt()
+            # self.validate_stmt()
             print("\n")
             self.enable_cfg = True
         else:
@@ -210,8 +260,6 @@ class Function(ASTObject):
     def has_return(lst_cursor):
         for c in lst_cursor:
             if c.kind is clang.cindex.CursorKind.RETURN_STMT:
-                return True
-            if Function.has_return(c.stmt_brother):
                 return True
             if Function.has_return(c.stmt_child):
                 return True
@@ -248,8 +296,8 @@ class Function(ASTObject):
         self.count_variable += fct.count_variable
         self.keywords += fct.keywords
 
-    def print_control_flow(self, lst, no_iter=0, index=0, parent=None, is_type_void=False):
-        i = index
+    def print_control_flow(self, lst, no_iter=0, parent=None, is_type_void=False):
+        i = 0
         if parent:
             print("file %s line %s mangled %s" % (parent.location.file.name, parent.location.line, parent.mangled_name))
             print("%s%s. %s - %s" % (no_iter * "\t", i, "Entry main", parent.displayname))
@@ -259,13 +307,14 @@ class Function(ASTObject):
             location = stmt.location
             print("%s%s. %s - line %s column %s" % (no_iter * "\t", i, stmt.name, location.line, location.column))
 
-            if stmt.stmt_child:
+            if stmt.stmt_child and stmt.kind not in dct_alias_hide_child_stmt.keys():
                 c_no_inter = no_iter + 1
                 self.print_control_flow(stmt.stmt_child, no_iter=c_no_inter)
 
-            for stmt_brother in stmt.stmt_brother:
-                self.print_control_flow([stmt_brother], no_iter=no_iter, index=i)
-                i += 1
+            if stmt.end_stmt:
+                end_stmt = stmt.end_stmt
+                print("%s%s. %s - line %s column %s" % (no_iter * "\t", i, end_stmt.name,
+                                                        end_stmt.location.line, end_stmt.location.column))
 
         if parent and lst:
             if not is_type_void and not Function.has_return(lst):
@@ -299,119 +348,73 @@ class Variable(ASTObject):
         super(Variable, self).__init__(cursor, filename=filename, store_variable=store_variable)
 
 
+class FakeStatement(object):
+    def __init__(self, name, begin_stmt=None, location=None):
+        self.name = name
+        self.location = location
+        self.begin_stmt = begin_stmt
+
+    @staticmethod
+    def label():
+        return ""
+
+
 class Statement(ASTObject):
-    def __init__(self, cursor, force_name=None, count_stmt=None):
+    def __init__(self, cursor, force_name=None, count_stmt=None, is_condition=False, stack_parent=None):
         super(Statement, self).__init__(cursor, filename=None, store_variable=False)
         self.name = Statement.get_stmt_name(cursor.kind) if not force_name else force_name
         self.unique_name = uuid.uuid4()
-        self.stmt_brother = []
         self.stmt_child = []
-        self.condition = None
+        self._is_condition = is_condition
         self.contain_else = False
+        self.description = ""
+        self.next_stmt = None
+        self.end_stmt = None
         self._fill_statement(cursor, count_stmt=count_stmt)
         if count_stmt is not None:
             count_stmt[self.name] += 1
 
+        # exception for condition
+        if is_condition:
+            self.name = "condition"
+        if cursor.kind in dct_alias_operator_stmt.keys():
+            self._construct_description()
+
+    def _construct_description(self):
+        for child in self.stmt_child:
+            self.description += "%s %s" % (child.type, child.name_tmpl)
+
     def label(self):
-        return "%s\nline %s" % (self.name, self.location.line)
+        desc = "" if not self.description else "\n%s" % self.description
+        return "%s\nline %s%s" % (self.name, self.location.line, desc)
 
     def _fill_statement(self, cursor, count_stmt=None):
-        function_stmt = [
-            clang.cindex.CursorKind.COMPOUND_STMT
-        ]
+        if self.is_block_stmt():
+            end_location = Location(cursor.extent.end)
+            self.end_stmt = FakeStatement("end " + self.name, begin_stmt=self, location=end_location)
 
-        is_child_found = False
+        is_first_child = True
         for child in cursor.get_children():
-            if self.is_condition():
-                # TODO fill the condition
-                self.condition = True
+            is_condition = is_first_child and cursor.kind in dct_alias_condition_stmt.keys()
+            self.stmt_child.append(Statement(child, count_stmt=count_stmt, is_condition=is_condition))
 
-            if is_child_found:
-                force_name = None
-                if self.kind is clang.cindex.CursorKind.IF_STMT:
-                    # # else if
-                    # if child.kind is clang.cindex.CursorKind.IF_STMT:
-                    # else
-                    force_name = "else"
-                    self.contain_else = True
+            if is_first_child:
+                is_first_child = False
 
-                if child.kind in function_stmt:
-                    self.stmt_brother.append(Statement(child, force_name=force_name, count_stmt=count_stmt))
-                else:
-                    # no compound, create it!
-                    # TODO find good line of created Statement
-                    # TODO search in back to find token else
-                    stmt = Statement(child, force_name=force_name, count_stmt=count_stmt)
-                    stmt.location.line -= 1
-                    stmt.stmt_child = [Statement(child, count_stmt=count_stmt)]
-                    self.stmt_brother.append(stmt)
-
-            else:
-                if child.kind not in dct_alias_stmt.keys():
-                    continue
-
-                # first compound found or another STMT is child
-                if child.kind in function_stmt:
-                    self.stmt_child = [Statement(c, count_stmt=count_stmt) for c in child.get_children()]
-                else:
-                    self.stmt_child = [Statement(child, count_stmt=count_stmt)]
-                is_child_found = True
-
-    def is_continous(self):
-        return self.contain_else
+    def is_operator(self):
+        return self.kind in dct_alias_operator_stmt.keys()
 
     def is_condition(self):
-        lst_clang_stmt = [
-            clang.cindex.CursorKind.CASE_STMT,
-            clang.cindex.CursorKind.IF_STMT,
-            clang.cindex.CursorKind.SWITCH_STMT,
-            clang.cindex.CursorKind.WHILE_STMT,
-            clang.cindex.CursorKind.DO_STMT,
-            clang.cindex.CursorKind.FOR_STMT,
-            clang.cindex.CursorKind.CXX_CATCH_STMT,
-            clang.cindex.CursorKind.CXX_FOR_RANGE_STMT
-        ]
-        return self.kind in lst_clang_stmt
+        self._is_condition
 
     def is_common_stmt(self):
-        lst_clang_stmt = [
-            clang.cindex.CursorKind.CASE_STMT,
-            clang.cindex.CursorKind.DEFAULT_STMT,
-            clang.cindex.CursorKind.IF_STMT,
-            clang.cindex.CursorKind.SWITCH_STMT,
-            clang.cindex.CursorKind.WHILE_STMT,
-            clang.cindex.CursorKind.DO_STMT,
-            clang.cindex.CursorKind.FOR_STMT,
-            clang.cindex.CursorKind.GOTO_STMT,
-            clang.cindex.CursorKind.CONTINUE_STMT,
-            clang.cindex.CursorKind.BREAK_STMT,
-            clang.cindex.CursorKind.RETURN_STMT,
-            clang.cindex.CursorKind.CXX_CATCH_STMT,
-            clang.cindex.CursorKind.CXX_TRY_STMT,
-            clang.cindex.CursorKind.CXX_FOR_RANGE_STMT
-        ]
-        return self.kind in lst_clang_stmt
+        return self.kind in dct_alias_common_stmt.keys()
 
     def is_block_stmt(self):
-        lst_clang_stmt = [
-            clang.cindex.CursorKind.CASE_STMT,
-            clang.cindex.CursorKind.DEFAULT_STMT,
-            clang.cindex.CursorKind.IF_STMT,
-            clang.cindex.CursorKind.SWITCH_STMT,
-            clang.cindex.CursorKind.WHILE_STMT,
-            clang.cindex.CursorKind.DO_STMT,
-            clang.cindex.CursorKind.FOR_STMT,
-            clang.cindex.CursorKind.CXX_CATCH_STMT,
-            clang.cindex.CursorKind.CXX_TRY_STMT,
-            clang.cindex.CursorKind.CXX_FOR_RANGE_STMT
-        ]
-        return self.kind in lst_clang_stmt
+        return self.kind in dct_alias_block_stmt.keys()
 
     def is_return(self):
-        lst_clang_stmt = [
-            clang.cindex.CursorKind.RETURN_STMT
-        ]
-        return self.kind in lst_clang_stmt
+        return self.kind in dct_alias_return_stmt.keys()
 
     def __repr__(self):
         return "\"%s\"" % self.name
