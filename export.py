@@ -50,43 +50,40 @@ class ClangParserCFG(object):
         print(
             "Info valid cfg %s %.2f%% on invalid cfg %s." % (count_valid_method, ratio_valid_cfg, count_invalid_method))
 
-    def _add_node(self, cfg_list, cls_fct, lvl=0, parent_name=None, end_block_name=None, entry_name=None,
-                  exit_name=None):
-        if not entry_name:
-            parent_name = entry_name = "%s_entry_%s" % (uuid.uuid4(), cls_fct.name)
-            self.g.add_node(entry_name, label="Entry " + cls_fct.name)
+    def _add_node(self, cfg, cls_fct):
+        label = cfg.label() if not cfg.method_obj else "Entry " + cfg.label()
+        self.g.add_node(cfg.unique_name, label=label)
 
-        if not exit_name:
-            end_block_name = exit_name = "%s_exit_%s" % (uuid.uuid4(), cls_fct.name)
-            self.g.add_node(exit_name, label="Exit " + cls_fct.name)
+        if cfg.end_stmt:
+            label = cfg.end_stmt.label() if not cfg.method_obj else "Exit " + cfg.end_stmt.label()
+            self.g.add_node(cfg.end_stmt.unique_name, label=label)
 
-        for c in cfg_list:
-            self.g.add_node(c.unique_name, label=c.label())
-            self.g.add_edge(parent_name, c.unique_name, arrowhead="normal")
-            child_parent_name = c.unique_name
+        if cfg.next_stmt:
+            self.g.add_edge(cfg.unique_name, cfg.next_stmt.unique_name, arrowhead="normal")
 
-            if c.is_block_stmt():
-                end_block_name = "end_block_%s" % uuid.uuid4()
-                self.g.add_node(end_block_name, label="%sEnd" % c.name)
+        last_child = None
+        for c in cfg.stmt_child:
+            if c.is_unknown:
+                continue
 
-            if c.is_return():
-                self.g.add_edge(c.unique_name, exit_name, arrowhead="normal")
-            elif not c.stmt_child and c is cfg_list[-1]:
-                self.g.add_edge(c.unique_name, end_block_name, arrowhead="normal")
-            elif c.stmt_child and not c.is_operator():
-                # previous_name = child_parent_name if not condition_name else condition_name
-                previous_name = child_parent_name
-                self._add_node(c.stmt_child, cls_fct, lvl=lvl + 1, parent_name=previous_name,
-                               end_block_name=end_block_name, entry_name=entry_name, exit_name=exit_name)
-
-            if c.is_block_stmt():
-                parent_name = end_block_name
+            if not last_child:
+                # first child, get parent operation
+                last_unique_name = cfg.unique_name
+            elif last_child.end_stmt:
+                # if contain end stmt, point to it
+                last_unique_name = last_child.end_stmt.unique_name
             else:
-                parent_name = c.unique_name
+                # by default, get last operation
+                last_unique_name = last_child.unique_name
 
-        if not cfg_list and not lvl:
-            # no stmt into this function
-            self.g.add_edge(entry_name, exit_name, arrowhead="normal")
+            self.g.add_edge(last_unique_name, c.unique_name, arrowhead="normal")
+            self._add_node(c, cls_fct)
+
+            last_child = c
+
+        if not cfg.stmt_child and cfg.method_obj:
+            # link together if no child and first level
+            self.g.add_edge(cfg.unique_name, cfg.end_stmt.unique_name, arrowhead="normal")
 
 
 class ClangParserUML(object):

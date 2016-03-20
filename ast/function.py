@@ -23,7 +23,7 @@ class Function(ASTObject):
         if filename in cursor.location.file.name:  # and not cursor.is_virtual_method():
             self.cfg = self._find_control_flow(cursor)
             is_type_void = cursor.result_type.kind is clang.cindex.TypeKind.VOID
-            self.print_control_flow(self.cfg, parent=cursor, is_type_void=is_type_void)
+            self.print_control_flow(self.cfg, is_type_void=is_type_void)
             # self.validate_stmt()
             print("\n")
             self.enable_cfg = True
@@ -68,17 +68,12 @@ class Function(ASTObject):
         if not isinstance(cursor, clang.cindex.Cursor):
             return []
 
-        function_stmt = [
-            clang.cindex.CursorKind.COMPOUND_STMT
-        ]
-
         # find first compound of function and get child control flow
-        start_stmt_cursor = [c for c in cursor.get_children() if c.kind in function_stmt]
-        # TODO add check if > 1, else print warning
-        if not start_stmt_cursor:
-            return []
-        return [Statement(child, count_stmt=self.lst_cfg) for child in start_stmt_cursor[0].get_children() if
-                child.kind in util.dct_alias_stmt.keys()]
+        start_stmt_cursor = [c for c in cursor.get_children() if c.kind in util.dct_alias_compound_stmt.keys()]
+        if len(start_stmt_cursor) != 1:
+            print("Error, cannot find stmt child into function %s" % self)
+            return None
+        return Statement(start_stmt_cursor[0], count_stmt=self.lst_cfg, method_obj=self)
 
     def merge(self, fct):
         if not isinstance(fct, Function):
@@ -86,29 +81,26 @@ class Function(ASTObject):
         self.count_variable += fct.count_variable
         self.keywords += fct.keywords
 
-    def print_control_flow(self, lst, no_iter=0, parent=None, is_type_void=False):
-        i = 0
-        if parent:
-            print("file %s line %s mangled %s" % (parent.location.file.name, parent.location.line, parent.mangled_name))
-            print("%s%s. %s - %s" % (no_iter * "\t", i, "Entry main", parent.displayname))
+    def print_control_flow(self, cfg, is_type_void=False):
+        print("file %s line %s mangled %s" % (self.location.file.name, self.location.line, self.mangled_name))
 
-        for stmt in lst:
-            i += 1
-            location = stmt.location
-            print("%s%s. %s - line %s column %s" % (no_iter * "\t", i, stmt.name, location.line, location.column))
-
-            if stmt.stmt_child and stmt.kind not in util.dct_alias_hide_child_stmt.keys():
-                c_no_inter = no_iter + 1
-                self.print_control_flow(stmt.stmt_child, no_iter=c_no_inter)
+        def print_cfg_child(stmt, level=0, no_iter=0):
+            next_msg = "" if not stmt.next_stmt else " - go line %s" % stmt.next_stmt.location.line
+            print("%s%s. %s - line %s%s" % (level * "\t", no_iter, stmt.name, stmt.location.line, next_msg))
+            child_iter = 0
+            for child in stmt.stmt_child:
+                if not child.is_unknown:
+                    print_cfg_child(child, level=level + 1, no_iter=child_iter)
+                    child_iter += 1
 
             if stmt.end_stmt:
                 end_stmt = stmt.end_stmt
-                print("%s%s. %s - line %s column %s" % (no_iter * "\t", i, end_stmt.name,
-                                                        end_stmt.location.line, end_stmt.location.column))
+                print("%s%s. %s - line %s" % (level * "\t", no_iter, end_stmt.name, end_stmt.location.line))
 
-        if parent and lst:
-            if not is_type_void and not Function.has_return(lst):
-                print("Error, missing return statement.")
+        print_cfg_child(cfg)
+
+        if not is_type_void and not Function.has_return(cfg.stmt_child):
+            print("Error, missing return statement.")
 
     def validate_stmt(self):
         if not self.keywords_stmt:
@@ -119,7 +111,6 @@ class Function(ASTObject):
 
         if lst_cfg != self.keywords_stmt:
             print("ERROR, Count stmt keyword '%s' is different of cfg '%s'." % (self.keywords_stmt, lst_cfg))
-            pass
         else:
             self.is_valid_cfg = True
             print("INFO, %s" % self.keywords_stmt)
