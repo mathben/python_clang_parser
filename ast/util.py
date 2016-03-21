@@ -25,6 +25,10 @@ dct_alias_operator_stmt = {
     clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
 }
 
+dct_alias_var_stmt = {
+    clang.cindex.CursorKind.INTEGER_LITERAL: "int",
+}
+
 dct_alias_hide_child_stmt = {
     clang.cindex.CursorKind.DECL_STMT: "declare",
     clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
@@ -51,10 +55,6 @@ dct_alias_loop_stmt = {
     clang.cindex.CursorKind.DO_STMT: "do",
 }
 
-dct_alias_return_stmt = {
-    clang.cindex.CursorKind.RETURN_STMT: "return",
-}
-
 dct_alias_affected_break_stmt = {
     clang.cindex.CursorKind.SWITCH_STMT: "switch",
     clang.cindex.CursorKind.DO_STMT: "do",
@@ -69,6 +69,10 @@ dct_alias_break_stmt = {
 
 dct_alias_continue_stmt = {
     clang.cindex.CursorKind.CONTINUE_STMT: "continue",
+}
+
+dct_alias_return_stmt = {
+    clang.cindex.CursorKind.RETURN_STMT: "return",
 }
 
 dct_alias_block_stmt = {
@@ -98,3 +102,4 @@ dct_alias_common_stmt = merge_two_dicts(dct_alias_condition_stmt, dct_alias_dire
 
 lst_alias_dct = [dct_alias_operator_stmt, dct_alias_directive_stmt, dct_alias_compound_stmt, dct_alias_condition_stmt]
 dct_alias_stmt = merge_all_dicts(lst_alias_dct)
+dct_alias_stmt_jump = merge_all_dicts([dct_alias_break_stmt, dct_alias_continue_stmt, dct_alias_return_stmt])
