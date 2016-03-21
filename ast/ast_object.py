@@ -7,6 +7,7 @@ from location import Location
 
 class ASTObject(object):
     def __init__(self, cursor, filename=None, store_variable=True):
+        super(ASTObject, self).__init__()
         # cursor information
         self.name = cursor.spelling
         self.spelling = cursor.spelling

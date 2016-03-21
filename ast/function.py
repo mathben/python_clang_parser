@@ -85,9 +85,17 @@ class Function(ASTObject):
     def print_control_flow(self, cfg, is_type_void=False):
         print("file %s line %s mangled %s" % (self.location.file.name, self.location.line, self.mangled_name))
 
-        def print_cfg_child(stmt, level=0, no_iter=0):
+        def print_line(stmt, level=0, no_iter=0):
             print("%s%s. %s - line %s%s" % (level * "\t", no_iter, stmt.name, stmt.location.line, stmt.info()))
+
+        def print_cfg_child(stmt, level=0, no_iter=0):
+            do_print = stmt.has_from_recursive()
+            if do_print:
+                # print begin stmt here
+                print_line(stmt, level=level, no_iter=no_iter)
+
             child_iter = 0
+            # print for all child
             for child in stmt.stmt_child:
                 if not child.is_unknown:
                     print_cfg_child(child, level=level + 1, no_iter=child_iter)
@@ -95,7 +103,10 @@ class Function(ASTObject):
 
             if stmt.end_stmt:
                 end_stmt = stmt.end_stmt
-                print("%s%s. %s - line %s" % (level * "\t", no_iter, end_stmt.name, end_stmt.location.line))
+                do_print = end_stmt.has_from_recursive()
+                if do_print:
+                    # print end stmt here
+                    print_line(end_stmt, level=level, no_iter=no_iter)
 
         print_cfg_child(cfg)
 
