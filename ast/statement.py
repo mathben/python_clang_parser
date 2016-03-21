@@ -120,9 +120,21 @@ class Statement(ASTObject):
         for child in lst_child:
             # condition is first item of child and need to be a condition stmt
             is_condition = not stmt and cursor.kind in util.dct_alias_condition_stmt
+            if before_stmt.is_compound():
+                good_before_stmt = before_stmt.before_stmt
+            else:
+                good_before_stmt = before_stmt
+
             stmt = Statement(child, count_stmt=count_stmt, is_condition=is_condition, stack_parent=stack_parent,
-                             before_stmt=before_stmt)
+                             before_stmt=good_before_stmt)
             self.stmt_child.append(stmt)
+
+            if not before_stmt.next_stmt and not stmt.is_unknown:
+                if before_stmt.is_compound():
+                    before_stmt.before_stmt.next_stmt = stmt
+                else:
+                    before_stmt.next_stmt = stmt
+
             before_stmt = stmt.end_stmt if stmt.end_stmt else stmt
 
             if is_condition:
@@ -134,15 +146,18 @@ class Statement(ASTObject):
             # TODO what we do we many condition? else?
             if len(lst_condition_child) > 1:
                 print("ERROR, find many condition child and only take first.")
-            self.stmt_condition.next_stmt = {"False": self.end_stmt, "True": stmt}
+            first_child = self.get_first_stmt_child(self.stmt_child)
+            self.stmt_condition.next_stmt = {"False": self.end_stmt, "True": first_child}
 
-        # get the last stmt of block (child) to point on his parent
+        # get the last stmt of block (child) to point on his parent end_stmt
         if stmt and not stmt.next_stmt and not stmt.is_unknown \
                 and not stmt.is_compound() \
                 and stmt.is_operator():
-            stmt.next_stmt = stack_parent[-2].end_stmt
+            # don't point to a compound stmt, get last block stmt
+            stmt.next_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_block_stmt).end_stmt
 
         stack_parent.pop()
+        # all node need a next_stmt and from_stmt
 
     def is_operator(self):
         return self.kind in util.dct_alias_operator_stmt
@@ -172,7 +187,7 @@ class Statement(ASTObject):
         return bool(self.method_obj)
 
     def __repr__(self):
-        return "\"%s\"" % self.name
+        return "'%s' l %s" % (self.name, self.location.line)
 
     @staticmethod
     def get_stmt_name(kind):
@@ -186,4 +201,13 @@ class Statement(ASTObject):
         # return None if not found
         for stmt in reversed(stack):
             if stmt.kind in dct_alias_stmt:
+                return stmt
+
+    @staticmethod
+    def get_first_stmt_child(lst_stmt_child):
+        # return None if not found
+        for stmt in lst_stmt_child:
+            if stmt.kind in util.dct_alias_compound_stmt:
+                return Statement.get_first_stmt_child(stmt.stmt_child)
+            if not stmt.is_condition():
                 return stmt
