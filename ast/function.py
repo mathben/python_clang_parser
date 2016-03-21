@@ -86,8 +86,7 @@ class Function(ASTObject):
         print("file %s line %s mangled %s" % (self.location.file.name, self.location.line, self.mangled_name))
 
         def print_cfg_child(stmt, level=0, no_iter=0):
-            next_msg = "" if not stmt.next_stmt else " - go line %s" % stmt.next_stmt.location.line
-            print("%s%s. %s - line %s%s" % (level * "\t", no_iter, stmt.name, stmt.location.line, next_msg))
+            print("%s%s. %s - line %s%s" % (level * "\t", no_iter, stmt.name, stmt.location.line, stmt.info()))
             child_iter = 0
             for child in stmt.stmt_child:
                 if not child.is_unknown:

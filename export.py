@@ -52,17 +52,34 @@ class ClangParserCFG(object):
 
     def _add_node(self, cfg):
         label = cfg.label() if not cfg.is_root() else "Entry " + cfg.label()
-        self.g.add_node(cfg.unique_name, label=label)
+        if not cfg.is_compound():
+            cfg_unique_name = cfg.unique_name
+            # ignore compound in graph
+            self.g.add_node(cfg_unique_name, label=label)
 
-        if cfg.end_stmt:
-            end_stmt = cfg.end_stmt
-            label = end_stmt.label() if not cfg.is_root() else "Exit " + end_stmt.label()
-            self.g.add_node(end_stmt.unique_name, label=label)
-            if end_stmt.next_stmt:
-                self.g.add_edge(end_stmt.unique_name, end_stmt.next_stmt.unique_name, arrowhead="normal")
+            if cfg.end_stmt:
+                # Create end stmt
+                end_stmt = cfg.end_stmt
+                label = end_stmt.label() if not cfg.is_root() else "Exit " + end_stmt.label()
+                self.g.add_node(end_stmt.unique_name, label=label)
+                if end_stmt.next_stmt:
+                    if cfg.is_block_stmt():
+                        self.g.add_edge(end_stmt.unique_name, end_stmt.next_stmt.stmt_condition.unique_name,
+                                        arrowhead="normal")
+                    else:
+                        self.g.add_edge(end_stmt.unique_name, end_stmt.next_stmt.unique_name, arrowhead="normal")
+        else:
+            # force to point on his parent, usually a condition
+            cfg_unique_name = cfg.before_stmt.unique_name
 
         if cfg.next_stmt:
-            self.g.add_edge(cfg.unique_name, cfg.next_stmt.unique_name, arrowhead="normal")
+            if type(cfg.next_stmt) is dict:
+                for key, value in cfg.next_stmt.items():
+                    # get first element in compound if exist
+                    unique_name = value.unique_name if not value.is_compound() else value.stmt_child[0].unique_name
+                    self.g.add_edge(cfg_unique_name, unique_name, arrowhead="normal", label=key)
+            else:
+                self.g.add_edge(cfg_unique_name, cfg.next_stmt.unique_name, arrowhead="normal")
 
         last_child = None
         for c in cfg.stmt_child:
@@ -71,7 +88,7 @@ class ClangParserCFG(object):
 
             if not last_child:
                 # first child, get parent operation
-                last_unique_name = cfg.unique_name
+                last_unique_name = cfg_unique_name
             elif last_child.end_stmt:
                 # if contain end stmt, point to it
                 last_unique_name = last_child.end_stmt.unique_name
@@ -79,14 +96,17 @@ class ClangParserCFG(object):
                 # by default, get last operation
                 last_unique_name = last_child.unique_name
 
-            self.g.add_edge(last_unique_name, c.unique_name, arrowhead="normal")
+            # link inter child
+            if not c.is_compound():
+                self.g.add_edge(last_unique_name, c.unique_name, arrowhead="normal")
+
             self._add_node(c)
 
             last_child = c
 
         if not cfg.stmt_child and cfg.is_root():
             # link together if no child and first level
-            self.g.add_edge(cfg.unique_name, cfg.end_stmt.unique_name, arrowhead="normal")
+            self.g.add_edge(cfg_unique_name, cfg.end_stmt.unique_name, arrowhead="normal")
 
 
 class ClangParserUML(object):

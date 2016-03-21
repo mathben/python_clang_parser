@@ -20,10 +20,14 @@ class FakeStatement(object):
     def label(self):
         return "%s\nline %s" % (self.name, self.location.line)
 
+    @staticmethod
+    def is_compound():
+        return False
+
 
 class Statement(ASTObject):
     def __init__(self, cursor, force_name=None, count_stmt=None, is_condition=False, method_obj=None,
-                 stack_parent=None):
+                 stack_parent=None, before_stmt=None):
         super(Statement, self).__init__(cursor, filename=None, store_variable=False)
         if method_obj:
             # start the stack for stmt_child
@@ -32,13 +36,15 @@ class Statement(ASTObject):
         if method_obj and not force_name:
             self.name = method_obj.name_tmpl
         else:
-            self.name = Statement.get_stmt_name(cursor.kind) if not force_name else force_name
+            self.name = self.get_stmt_name(cursor.kind) if not force_name else force_name
         self.is_unknown = self.name == "UNKNOWN" and not is_condition
         self.unique_name = uuid.uuid4()
         self.stmt_child = []
         self._is_condition = is_condition
+        self.stmt_condition = None
         self.contain_else = False
         self.description = ""
+        self.before_stmt = before_stmt
         self.next_stmt = None
         self.end_stmt = None
         self.method_obj = method_obj
@@ -62,6 +68,21 @@ class Statement(ASTObject):
         desc = "" if not self.description else "\n%s" % self.description
         return "%s\nline %s%s" % (self.name, self.location.line, desc)
 
+    def info(self):
+        def generic_info(stmt, key):
+            msg = ""
+            if stmt:
+                msg += " - (%s " % key
+                if type(stmt) is dict:
+                    for key, value in stmt.items():
+                        msg += "[\"%s\" line %s \"%s\"] " % (key, value.location.line, value.name)
+                    msg = msg.rstrip() + ")"
+                else:
+                    msg += "[line %s \"%s\"])" % (stmt.location.line, stmt.name)
+            return msg
+
+        return generic_info(self.before_stmt, "from") + generic_info(self.next_stmt, "to")
+
     def _fill_statement(self, cursor, count_stmt=None, stack_parent=None):
         if self.is_block_stmt() or self.is_root():
             if stack_parent[-1].kind is clang.cindex.CursorKind.IF_STMT:
@@ -77,39 +98,60 @@ class Statement(ASTObject):
         if self.is_stmt_return():
             # get function stmt
             self.next_stmt = stack_parent[0].end_stmt
-
-        if self.is_stmt_break():
+        elif self.is_stmt_break():
             # exit last block end stmt of switch or loop stmt
             last_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_affected_break_stmt)
             if last_stmt:
                 self.next_stmt = last_stmt.end_stmt
-
-        if self.is_stmt_continue():
+        elif self.is_stmt_continue():
             # go to last block of switch or loop stmt
-            self.next_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_affected_break_stmt)
+            last_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_affected_break_stmt)
+            self.next_stmt = last_stmt.stmt_condition
 
         if not self.is_root():
             # add stmt on stack, ignore if root, because already in stack
             stack_parent.append(self)
 
+        before_stmt = self
         stmt = None
         lst_child = list(cursor.get_children())
+        # keep trace on stmt condition to build next_stmt when child is instance
+        lst_condition_child = []
         for child in lst_child:
             # condition is first item of child and need to be a condition stmt
             is_condition = not stmt and cursor.kind in util.dct_alias_condition_stmt
-            stmt = Statement(child, count_stmt=count_stmt, is_condition=is_condition, stack_parent=stack_parent)
+            stmt = Statement(child, count_stmt=count_stmt, is_condition=is_condition, stack_parent=stack_parent,
+                             before_stmt=before_stmt)
             self.stmt_child.append(stmt)
+            before_stmt = stmt.end_stmt if stmt.end_stmt else stmt
 
-        # get the last stmt of child to point on his parent
+            if is_condition:
+                if not self.stmt_condition:
+                    self.stmt_condition = stmt
+                lst_condition_child.append(stmt)
+
+        if lst_condition_child:
+            # TODO what we do we many condition? else?
+            if len(lst_condition_child) > 1:
+                print("ERROR, find many condition child and only take first.")
+            self.stmt_condition.next_stmt = {"False": self.end_stmt, "True": stmt}
+
+        # get the last stmt of block (child) to point on his parent
         if stmt and not stmt.next_stmt and not stmt.is_unknown \
-                and stmt.kind not in util.dct_alias_compound_stmt \
-                and stmt.kind in util.dct_alias_operator_stmt:
+                and not stmt.is_compound() \
+                and stmt.is_operator():
             stmt.next_stmt = stack_parent[-2].end_stmt
 
         stack_parent.pop()
 
     def is_operator(self):
         return self.kind in util.dct_alias_operator_stmt
+
+    def is_compound(self):
+        return self.kind in util.dct_alias_compound_stmt and not self.is_root()
+
+    def is_condition(self):
+        return self._is_condition
 
     def is_common_stmt(self):
         return self.kind in util.dct_alias_common_stmt
