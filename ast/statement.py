@@ -167,6 +167,9 @@ class ParentStatement(object):
     @staticmethod
     def _add_stmt(before_stmt, next_stmt, condition=None):
         if isinstance(next_stmt, ParentStatement) and isinstance(before_stmt, ParentStatement):
+            if before_stmt == next_stmt and before_stmt.is_end():
+                # remove strange redondance, when end stmt point to itself
+                return
             if not (before_stmt.is_condition() and next_stmt.is_compound()):
                 ParentStatement._append_stmt(before_stmt.next_stmt, next_stmt, condition=condition)
             ParentStatement._append_stmt(next_stmt.before_stmt, before_stmt, condition=condition)
@@ -181,6 +184,8 @@ class ParentStatement(object):
             b_stmt = self.get_first_before_stmt(stmt)
             b_condition = None
             if b_stmt.is_condition():
+                # if self.is_end():
+                #     return
                 # set condition branch
                 if "True" not in b_stmt.next_stmt:
                     b_condition = "True"
@@ -212,8 +217,8 @@ class ParentStatement(object):
                     b_condition = "False"
             self._add_stmt(stmt, self, condition=b_condition)
 
-        if self.is_stmt_return():
-            self._add_stmt(self, stack_parent[0].end_stmt)
+        # if self.is_stmt_return():
+        #     self._add_stmt(self, stack_parent[0].end_stmt)
 
         # elif self.is_stmt_break():
         #     last_loop_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_affected_break_stmt)
@@ -339,13 +344,13 @@ class Statement(ASTObject, ParentStatement):
             if len(lst_child) == i and (self.is_compound() or self.is_block_stmt() or self.is_root()):
                 # last child in block
                 # ignore if the stmt is else. When last 2 child are compound
-                if not (len(lst_child) > 2 and self.stmt_child[-1].is_compound() and self.stmt_child[-2].is_compound()):
+                if not (len(lst_child) == 3 and self.stmt_child[-1].is_compound() and self.stmt_child[-2].is_compound()):
                     self._add_before_stmt_in_child(stmt, stack_parent)
 
             # to optimize, don't continue with child if jump stmt
-            if stmt.kind in util.dct_alias_stmt_jump and not self.is_block_stmt():
-                self._add_before_stmt_in_child(stmt, stack_parent)
-                break
+            # if stmt.kind in util.dct_alias_stmt_jump and not self.is_block_stmt():
+            #     self._add_before_stmt_in_child(stmt, stack_parent)
+            #     break
 
         if self.is_block_stmt():
             stack_parent.pop()
