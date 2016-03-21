@@ -9,7 +9,7 @@ import datetime
 from multiprocessing import Pool
 
 # local import
-import clang_parser
+from ast import ast
 import export
 
 AST_EXT_FILE = ".ast"
@@ -75,6 +75,10 @@ def parse_args():
     group = _arg_parser.add_argument_group("UML")
     group.add_argument('--generate_uml', default=False, action='store_true',
                        help='Generate UML of relation between class.')
+
+    group = _arg_parser.add_argument_group("Control Flow")
+    group.add_argument('--generate_control_flow', default=False, action='store_true',
+                       help='Generate control flow from main function.')
 
     return _arg_parser
 
@@ -174,7 +178,7 @@ class ClangParserGenerator:
 
     def generator(self):
         for _file in self._lst_file:
-            yield clang_parser.clang_parser(_file)
+            yield ast.clang_parser(_file)
 
 
 def start_clang_process(_parser):
@@ -188,7 +192,7 @@ def start_clang_process(_parser):
     if _parser.disable_threading:
         it = ClangParserGenerator(lst_clang_parser_arg).generator()
     else:
-        it = Pool(processes=_parser.nb_cpu).imap_unordered(clang_parser.clang_parser, lst_clang_parser_arg)
+        it = Pool(processes=_parser.nb_cpu).imap_unordered(ast.clang_parser, lst_clang_parser_arg)
 
     # execute and return result for all file
     if _parser.quiet:
@@ -218,6 +222,9 @@ if __name__ == '__main__':
 
     if parser.generate_uml:
         export.ClangParserUML(parser, lst_obj_ast).generate_uml()
+
+    if parser.generate_control_flow:
+        export.ClangParserCFG(parser, lst_obj_ast).generate_cfg()
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)
