@@ -23,6 +23,7 @@ def merge_two_dicts(x, y):
 dct_alias_operator_stmt = {
     clang.cindex.CursorKind.DECL_STMT: "declare",
     clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
+    clang.cindex.CursorKind.CALL_EXPR: "call",
 }
 
 dct_alias_var_stmt = {

@@ -50,7 +50,7 @@ class GenerateCfg(object):
                                                                count_invalid_method))
 
     def _add_generic_node(self, cfg, key_label=""):
-        if not cfg:
+        if not cfg or (not cfg.next_stmt and not cfg.before_stmt):
             return
         label = cfg.label() if not cfg.is_root() else key_label + cfg.label()
         self.g.add_node(cfg.unique_name, label=label)
@@ -70,5 +70,5 @@ class GenerateCfg(object):
 
         # create node for child
         for stmt in cfg.stmt_child:
-            if not stmt.is_unknown:
+            if not stmt.is_unknown and (stmt.next_stmt or stmt.before_stmt):
                 self._add_node(stmt)
