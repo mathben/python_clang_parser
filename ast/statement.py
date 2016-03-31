@@ -17,6 +17,8 @@ class ParentStatement(object):
         self.next_stmt = {}
         self.begin_stmt = None
         self.end_stmt = None
+        self.dom_next_stmt = []
+        self.dom_parent_stmt = None
         self._is_condition = False
         self.method_obj = None
         self.name = ""
@@ -58,6 +60,10 @@ class ParentStatement(object):
 
     def is_root(self):
         return bool(self.method_obj)
+
+    @staticmethod
+    def count_total_stmt(dct_stmt):
+        return sum([len(a) for a in dct_stmt.values()])
 
     def label(self):
         desc = "" if not self.description else "\n%s" % self.description
@@ -277,6 +283,70 @@ class Statement(ASTObject, ParentStatement):
 
         if self.kind in util.dct_alias_operator_stmt:
             self._construct_description()
+
+        if self.is_root():
+            self._generate_dominator_cfg(stmt=self, visited_stmt=[])
+
+    @staticmethod
+    def _get_dominator_parent_stack(stmt):
+        # TODO use lambda
+        if not stmt:
+            return
+        stack_stmt = [stmt]
+        while stmt.dom_parent_stmt:
+            stmt = stmt.dom_parent_stmt
+            stack_stmt.append(stmt)
+
+        return stack_stmt
+
+    @staticmethod
+    def _find_first_common_stmt(stack_parent, lst_stmt, lst_visited_stmt):
+        for visit_stmt in lst_stmt:
+            if visit_stmt in lst_visited_stmt:
+                continue
+            if visit_stmt in stack_parent:
+                return visit_stmt
+            lst_visited_stmt.append(visit_stmt)
+            lst_before_stmt = [b for a in visit_stmt.before_stmt.values() for b in a]
+            return_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, lst_visited_stmt)
+            if return_stmt:
+                return return_stmt
+
+    @staticmethod
+    def _generate_dominator_cfg(stmt=None, parent_stmt=None, visited_stmt=None):
+        # exit if stmt is None or already find dominator next stmt
+        if not stmt or stmt.dom_next_stmt:
+            return
+
+        if ParentStatement.count_total_stmt(stmt.before_stmt) > 1:
+            # need to find who is the nearest stmt
+            lst_before_stmt = [b for a in stmt.before_stmt.values() for b in a if b != parent_stmt]
+            stack_parent = Statement._get_dominator_parent_stack(parent_stmt)
+
+            new_parent_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, [])
+            if new_parent_stmt != parent_stmt:
+                if stmt in parent_stmt.dom_next_stmt:
+                    parent_stmt.dom_next_stmt.remove(stmt)
+                parent_stmt = new_parent_stmt
+                parent_stmt.dom_next_stmt.append(stmt)
+
+        elif not stmt.before_stmt and not stmt.is_root():
+            print("Error, all cfg stmt node suppose to have before_stmt.")
+            return
+
+        if stmt in visited_stmt:
+            return
+        print("Trace dom add %s" % stmt)
+        visited_stmt.append(stmt)
+        # merge list from list/list
+        stmt.dom_parent_stmt = parent_stmt
+        # example, [[a, b], [c, d]] -> [a, b, c, d]
+        lst_next_stmt = [b for a in stmt.next_stmt.values() for b in a]
+        # for all stmt, find dominator
+        for next_stmt in lst_next_stmt:
+            stmt.dom_next_stmt.append(next_stmt)
+            Statement._generate_dominator_cfg(next_stmt, parent_stmt=stmt, visited_stmt=visited_stmt)
+
 
     def _construct_description(self):
         for child in self.stmt_child:
