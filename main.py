@@ -10,7 +10,7 @@ from multiprocessing import Pool
 
 # local import
 from ast import ast
-import export
+import result
 
 AST_EXT_FILE = ".ast"
 CSV_EXT_FILE = ".csv"
@@ -55,6 +55,8 @@ def parse_args():
     group.add_argument('--working_path',
                        help='Specify path of file or directory. Need to exist into root_directory. '
                             'If not specified, working_path will be root_directory.')
+    group.add_argument('--graph_path', default="graph",
+                       help='Specify path of graph generation.')
     group.add_argument('--translation_unit_dir',
                        help='Specify path of translation unit directory where to save AST file generate by Clang. '
                             'The parser will use the saving file if exist. '
@@ -218,13 +220,13 @@ if __name__ == '__main__':
     lst_obj_ast = start_clang_process(parser)
 
     if parser.generate_csv_stat:
-        export.ClangParserCSV(parser, lst_obj_ast).generate_stat()
+        result.generate_stat_csv.GenerateStatCsv(parser, lst_obj_ast).generate_stat()
 
     if parser.generate_uml:
-        export.ClangParserUML(parser, lst_obj_ast).generate_uml()
+        result.generate_uml.GenerateUml(parser, lst_obj_ast).generate_uml()
 
     if parser.generate_control_flow:
-        export.ClangParserCFG(parser, lst_obj_ast).generate_cfg()
+        result.generate_cfg.GenerateCfg(parser, lst_obj_ast).generate_cfg()
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)
