@@ -345,6 +345,10 @@ class Statement(ASTObject, ParentStatement):
 
         for child in lst_child:
             i += 1
+            # ignore stmt chain when parent is not a block or root
+            if not self.is_block_stmt() and not self.is_compound() and not self.is_root():
+                before_stmt = None
+
             stmt = Statement(child, count_stmt=count_stmt, is_condition=False, stack_parent=stack_parent,
                              before_stmt=before_stmt)
 

@@ -89,7 +89,7 @@ class Function(ASTObject):
             print("%s%s. %s - line %s%s" % (level * "\t", no_iter, stmt.name, stmt.location.line, stmt.info()))
 
         def print_cfg_child(stmt, level=0, no_iter=0):
-            do_print = stmt.has_from_recursive()
+            do_print = True  # stmt.has_from_recursive()
             if do_print:
                 # print begin stmt here
                 print_line(stmt, level=level, no_iter=no_iter)
@@ -103,7 +103,7 @@ class Function(ASTObject):
 
             if stmt.end_stmt:
                 end_stmt = stmt.end_stmt
-                do_print = end_stmt.has_from_recursive()
+                do_print = True  # end_stmt.has_from_recursive()
                 if do_print:
                     # print end stmt here
                     print_line(end_stmt, level=level, no_iter=no_iter)
