@@ -50,15 +50,16 @@ class GenerateCfg(object):
                                                                count_invalid_method))
 
     def _add_generic_node(self, cfg, key_label=""):
-        if cfg and not cfg.is_compound():
-            label = cfg.label() if not cfg.is_root() else key_label + cfg.label()
-            self.g.add_node(cfg.unique_name, label=label)
+        if not cfg:
+            return
+        label = cfg.label() if not cfg.is_root() else key_label + cfg.label()
+        self.g.add_node(cfg.unique_name, label=label)
 
-            for key, lst_value in cfg.next_stmt.items():
-                for value in lst_value:
-                    # add link
-                    label = key if key else ""
-                    self.g.add_edge(cfg.unique_name, value.unique_name, arrowhead="normal", label=label)
+        for key, lst_value in cfg.next_stmt.items():
+            for value in lst_value:
+                # add link
+                label = key if key else ""
+                self.g.add_edge(cfg.unique_name, value.unique_name, arrowhead="normal", label=label)
 
     def _add_node(self, cfg):
         # begin stmt

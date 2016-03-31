@@ -53,6 +53,9 @@ class ParentStatement(object):
     def is_stmt_continue(self):
         return self.kind in util.dct_alias_continue_stmt
 
+    def is_stmt_jump(self):
+        return self.kind in util.dct_alias_stmt_jump
+
     def is_root(self):
         return bool(self.method_obj)
 
@@ -166,34 +169,23 @@ class ParentStatement(object):
 
     @staticmethod
     def _add_stmt(before_stmt, next_stmt, condition=None):
+        """Link stmt together with before_stmt and next_stmt. Use condition to add label for direction.
+        """
         if isinstance(next_stmt, ParentStatement) and isinstance(before_stmt, ParentStatement):
-            if before_stmt == next_stmt and before_stmt.is_end():
-                # remove strange redondance, when end stmt point to itself
-                return
-            if not (before_stmt.is_condition() and next_stmt.is_compound()):
-                ParentStatement._append_stmt(before_stmt.next_stmt, next_stmt, condition=condition)
+            # if before_stmt == next_stmt and before_stmt.is_end():
+            #     # remove strange redundancy, when end stmt point to itself
+            #     return
+            ParentStatement._append_stmt(before_stmt.next_stmt, next_stmt, condition=condition)
             ParentStatement._append_stmt(next_stmt.before_stmt, before_stmt, condition=condition)
+            print("TRACE before %s; next %s condition %s" % (before_stmt, next_stmt, condition))
 
     def add_before_stmt(self, stmt, stack_parent):
         # stmt can be dict(key, Statement) or Statement or list(Statement)
-        if self.is_unknown or not stmt or stmt.is_unknown:
+        # TODO stmt is self with return statement. It's an error.
+        if self.is_unknown or not stmt or stmt.is_unknown or (stmt == self and stmt.is_block_stmt()):
             return
 
-        if stmt.is_compound():
-            # compound has always 1 before_stmt
-            b_stmt = self.get_first_before_stmt(stmt)
-            b_condition = None
-            if b_stmt.is_condition():
-                # if self.is_end():
-                #     return
-                # set condition branch
-                if "True" not in b_stmt.next_stmt:
-                    b_condition = "True"
-                else:
-                    b_condition = "False"
-            self._add_stmt(b_stmt, self, condition=b_condition)
-
-        elif stmt.is_stmt_return():
+        if stmt.is_stmt_return():
             self._add_stmt(stmt, stack_parent[0].end_stmt)
 
         elif stmt.is_stmt_break():
@@ -204,7 +196,7 @@ class ParentStatement(object):
             last_loop_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_affected_break_stmt)
             self._add_stmt(stmt, last_loop_stmt.stmt_condition)
 
-        elif self.is_loop_stmt() and self.is_end():
+        elif self.is_loop_stmt() and self.is_end() and not stmt.is_condition():
             self._add_stmt(stmt, self.begin_stmt.stmt_condition)
 
         else:
@@ -216,17 +208,6 @@ class ParentStatement(object):
                 else:
                     b_condition = "False"
             self._add_stmt(stmt, self, condition=b_condition)
-
-        # if self.is_stmt_return():
-        #     self._add_stmt(self, stack_parent[0].end_stmt)
-
-        # elif self.is_stmt_break():
-        #     last_loop_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_affected_break_stmt)
-        #     self._add_stmt(stmt, last_loop_stmt.end_stmt)
-        #
-        # elif self.is_stmt_continue():
-        #     last_loop_stmt = self.get_last_stmt_from_stack(stack_parent, util.dct_alias_affected_break_stmt)
-        #     self._add_stmt(stmt, last_loop_stmt.stmt_condition)
 
     def __repr__(self):
         return "'%s' l %s" % (self.name, self.location.line)
@@ -274,6 +255,9 @@ class Statement(ASTObject, ParentStatement):
         self.end_stmt = None
         self.method_obj = method_obj
 
+        if self.is_unknown:
+            return
+
         if self.is_root():
             # start the stack for stmt_child
             stack_parent = [self]
@@ -314,6 +298,8 @@ class Statement(ASTObject, ParentStatement):
                 stack_parent.append(self)
 
     def _fill_statement(self, cursor, count_stmt=None, stack_parent=None):
+        """Search child Statement. Link with before Statement.
+        """
         before_stmt = self
         stmt = None
         lst_child = list(cursor.get_children())
@@ -339,25 +325,50 @@ class Statement(ASTObject, ParentStatement):
             before_stmt = stmt.end_stmt if stmt.end_stmt else stmt
 
             if is_condition and not self.stmt_condition:
+                # store this stmt condition in parent stmt
                 self.stmt_condition = stmt
 
-            if len(lst_child) == i and (self.is_compound() or self.is_block_stmt() or self.is_root()):
-                # last child in block
-                # ignore if the stmt is else. When last 2 child are compound
-                if not (len(lst_child) == 3 and self.stmt_child[-1].is_compound() and self.stmt_child[-2].is_compound()):
-                    self._add_before_stmt_in_child(stmt, stack_parent)
+            # because last child haven't next, we force to connect STMT
+            # support else when i == 2
+            if not stmt.is_unknown and \
+                    (i == len(lst_child) or (self.kind is clang.cindex.CursorKind.IF_STMT and i == 2)) \
+                    and not stmt.is_compound():
+                self._add_before_stmt_in_child(stmt, stack_parent)
+
+                # if len(lst_child) == i and (self.is_compound() or self.is_block_stmt() or self.is_root()):
+                #     # last child in block
+                #     # ignore if the stmt is else. When last 2 child are compound
+                #     if not (len(lst_child) == 3 and self.stmt_child[-1].is_compound() and self.stmt_child[-2].is_compound()):
+                #         self._add_before_stmt_in_child(stmt, stack_parent)
 
             # to optimize, don't continue with child if jump stmt
-            # if stmt.kind in util.dct_alias_stmt_jump and not self.is_block_stmt():
-            #     self._add_before_stmt_in_child(stmt, stack_parent)
-            #     break
+            if stmt.is_stmt_jump() and (self.is_compound() or self.is_root()):
+                self._add_before_stmt_in_child(stmt, stack_parent)
+                break
+            # exception, when it's a block and some jump inside, ignore the rest of child
+            if stmt.is_block_stmt() and not stmt.end_stmt.before_stmt:
+                # remove end stmt, because no one point on it
+                stmt.end_stmt = None
+                break
 
         if self.is_block_stmt():
+            if self.stmt_condition:
+                # exception, add false condition if not exist
+                if "False" not in self.stmt_condition.next_stmt:
+                    self.end_stmt.add_before_stmt(self.stmt_condition, stack_parent)
             stack_parent.pop()
 
     def _add_before_stmt_in_child(self, stmt, stack_parent):
-        # find last end of stmt block
-        end_stmt = self.get_first_end_before_stmt(self, stack_parent)
-        actual_stmt = stmt.end_stmt if stmt.is_block_stmt() else stmt
-        if end_stmt:
-            end_stmt.add_before_stmt(actual_stmt, stack_parent)
+        """Find last end of stmt block.
+        Exception if stmt jump type
+        """
+        if stmt.is_unknown:
+            return
+        if stmt.is_stmt_jump():
+            # cannot add before_stmt on this type of stmt
+            stmt.add_before_stmt(stmt, stack_parent)
+        else:
+            end_stmt = self.get_first_end_before_stmt(self, stack_parent)
+            actual_stmt = stmt.end_stmt if stmt.is_block_stmt() else stmt
+            if end_stmt:
+                end_stmt.add_before_stmt(actual_stmt, stack_parent)
