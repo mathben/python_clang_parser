@@ -62,6 +62,26 @@ class ParentStatement(object):
         return bool(self.method_obj)
 
     @staticmethod
+    def remove_compound(stmt):
+        if not stmt:
+            return
+        if stmt.is_compound():
+            # we remove the actual stmt, but all before stmt will point on next stmt
+            for key, value in stmt.before_stmt.items():
+                for b_stmt in value:
+                    # usually 1 loop and key is True
+                    b_stmt.next_stmt[key] = stmt.next_stmt[None]
+                    for n_value in stmt.next_stmt[None]:
+                        # None is from compound, now it's the from the new key
+                        del n_value.before_stmt[None]
+                        n_value.before_stmt[key] = value
+            # erase before and next stmt for compound
+            stmt.before_stmt = {}
+            stmt.next_stmt = {}
+        for stmt_child in stmt.stmt_child:
+            ParentStatement.remove_compound(stmt_child)
+
+    @staticmethod
     def count_total_stmt(dct_stmt):
         return sum([len(a) for a in dct_stmt.values()])
 
@@ -285,6 +305,7 @@ class Statement(ASTObject, ParentStatement):
             self._construct_description()
 
         if self.is_root():
+            self.remove_compound(stmt=self)
             self._generate_dominator_cfg(stmt=self, visited_stmt=[])
 
     @staticmethod
@@ -346,7 +367,6 @@ class Statement(ASTObject, ParentStatement):
         for next_stmt in lst_next_stmt:
             stmt.dom_next_stmt.append(next_stmt)
             Statement._generate_dominator_cfg(next_stmt, parent_stmt=stmt, visited_stmt=visited_stmt)
-
 
     def _construct_description(self):
         for child in self.stmt_child:
