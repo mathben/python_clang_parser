@@ -50,6 +50,7 @@ class GenerateCfg(object):
                                                                count_invalid_method))
 
     def _add_generic_node(self, cfg, key_label=""):
+        # don't print if empty and no next or before stmt
         if not cfg or (not cfg.next_stmt and not cfg.before_stmt):
             return
         label = cfg.label() if not cfg.is_root() else key_label + cfg.label()
@@ -58,8 +59,16 @@ class GenerateCfg(object):
         for key, lst_value in cfg.next_stmt.items():
             for value in lst_value:
                 # add link
-                label = key if key else ""
-                self.g.add_edge(cfg.unique_name, value.unique_name, arrowhead="normal", label=label)
+                label = ""
+                color = ""
+                if key:
+                    label = key
+                    if key == "True":
+                        color = "green"
+                    elif key == "False":
+                        color = "red"
+
+                self.g.add_edge(cfg.unique_name, value.unique_name, arrowhead="normal", label=label, color=color)
 
     def _add_node(self, cfg):
         # begin stmt
@@ -70,5 +79,4 @@ class GenerateCfg(object):
 
         # create node for child
         for stmt in cfg.stmt_child:
-            if not stmt.is_unknown and (stmt.next_stmt or stmt.before_stmt):
-                self._add_node(stmt)
+            self._add_node(stmt)

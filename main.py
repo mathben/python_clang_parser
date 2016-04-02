@@ -82,7 +82,7 @@ def parse_args():
     group.add_argument('--generate_control_flow', default=False, action='store_true',
                        help='Generate control flow from main function.')
     group.add_argument('--generate_dominator', default=False, action='store_true',
-                       help='Generate dominator graph from control flow.')
+                       help='Generate dominator and post-dominator graph from control flow.')
 
     return _arg_parser
 
@@ -232,6 +232,7 @@ if __name__ == '__main__':
 
     if parser.generate_dominator:
         result.generate_dominator.GenerateDominator(parser, lst_obj_ast).generate_dominator()
+        result.generate_dominator.GenerateDominator(parser, lst_obj_ast, is_dominator=False).generate_dominator()
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)

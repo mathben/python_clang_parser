@@ -8,17 +8,43 @@ from clang_parser import clang
 from location import Location
 import util
 
+# use this ref to reverse walk over stmt
+ref_stmt = {
+    "dominator": {
+        "before_stmt": "before_stmt",
+        "next_stmt": "next_stmt",
+        "begin_stmt": "begin_stmt",
+        "end_stmt": "end_stmt",
+        "dom_next_stmt": "dom_next_stmt",
+        "dom_parent_stmt": "dom_parent_stmt"
+    },
+    "post_dominator": {
+        "before_stmt": "next_stmt",
+        "next_stmt": "before_stmt",
+        "begin_stmt": "end_stmt",
+        "end_stmt": "begin_stmt",
+        "dom_next_stmt": "post_dom_next_stmt",
+        "dom_parent_stmt": "post_dom_parent_stmt"
+    }
+}
+
 
 class ParentStatement(object):
     def __init__(self, *args, **kwargs):
         super(ParentStatement, self).__init__()
         self.description = ""
+
         self.before_stmt = {}
         self.next_stmt = {}
         self.begin_stmt = None
         self.end_stmt = None
-        self.dom_next_stmt = []
+
+        self.dom_next_stmt = set()
         self.dom_parent_stmt = None
+
+        self.post_dom_next_stmt = set()
+        self.post_dom_parent_stmt = None
+
         self._is_condition = False
         self.method_obj = None
         self.name = ""
@@ -63,6 +89,7 @@ class ParentStatement(object):
 
     @staticmethod
     def remove_compound(stmt):
+        # this function remove compound stmt
         if not stmt:
             return
         if stmt.is_compound():
@@ -134,7 +161,7 @@ class ParentStatement(object):
                 if isinstance(stmt_obj, dict):
                     for item_key, item_value in stmt_obj.items():
                         lst_msg.extend(get_msg_stmt(item_value, s_key=item_key))
-                elif isinstance(stmt_obj, list):
+                elif isinstance(stmt_obj, list) or isinstance(stmt_obj, set):
                     for value in stmt_obj:
                         if not isinstance(value, ParentStatement):
                             continue
@@ -147,7 +174,13 @@ class ParentStatement(object):
             msg_stmt = "] [".join(get_msg_stmt(stmt))
             return " - (%s [%s])" % (key, msg_stmt) if msg_stmt else ""
 
-        return generic_info(self.before_stmt, "from") + generic_info(self.next_stmt, "to")
+        info_from = generic_info(self.before_stmt, "from")
+        info_to = generic_info(self.next_stmt, "to")
+        contain_info = info_from or info_to
+        info_dom = " - dom %s" % self.dom_next_stmt if contain_info and self.dom_next_stmt else ""
+        info_post_dom = " - post-dom %s" % self.post_dom_next_stmt if contain_info and self.post_dom_next_stmt else ""
+        tuple_info = (info_from, info_to, info_dom, info_post_dom)
+        return "%s%s%s%s" % tuple_info
 
     @staticmethod
     def get_first_end_before_stmt(stmt, stack_parent):
@@ -190,9 +223,10 @@ class ParentStatement(object):
         if not (isinstance(_stmt, ParentStatement) and isinstance(dct_stmt, dict)):
             return
         if not dct_stmt or condition not in dct_stmt:
-            dct_stmt[condition] = [_stmt]
+            # TODO we need to create set to remove duplication, find why?
+            dct_stmt[condition] = set([_stmt])
         else:
-            dct_stmt[condition].append(_stmt)
+            dct_stmt[condition].add(_stmt)
 
     def add_stmt(self, next_stmt, condition=None):
         """Link stmt together with self and next_stmt. Use condition to add label for direction.
@@ -231,10 +265,7 @@ class ParentStatement(object):
             b_condition = None
             if stmt.is_condition():
                 # set condition branch
-                if "True" not in stmt.next_stmt:
-                    b_condition = "True"
-                else:
-                    b_condition = "False"
+                b_condition = "False" if "True" in stmt.next_stmt else "True"
             stmt.add_stmt(self, condition=b_condition)
 
     def __repr__(self):
@@ -306,52 +337,64 @@ class Statement(ASTObject, ParentStatement):
 
         if self.is_root():
             self.remove_compound(stmt=self)
-            self._generate_dominator_cfg(stmt=self, visited_stmt=[])
+            # generate node of dominator
+            self._generate_dominator_cfg(stmt=self, visited_stmt=[], ref_key="dominator")
+            # generate node of post-dominator
+            self._generate_dominator_cfg(stmt=self.end_stmt, visited_stmt=[], ref_key="post_dominator")
 
     @staticmethod
-    def _get_dominator_parent_stack(stmt):
+    def _get_dominator_parent_stack(stmt, ref_key="dominator"):
+        stmt_ref = ref_stmt[ref_key]
         # TODO use lambda
         if not stmt:
             return
         stack_stmt = [stmt]
-        while stmt.dom_parent_stmt:
-            stmt = stmt.dom_parent_stmt
+        stmt = getattr(stmt, stmt_ref["dom_parent_stmt"])
+        while stmt:
             stack_stmt.append(stmt)
+            stmt = getattr(stmt, stmt_ref["dom_parent_stmt"])
 
         return stack_stmt
 
     @staticmethod
-    def _find_first_common_stmt(stack_parent, lst_stmt, lst_visited_stmt):
-        for visit_stmt in lst_stmt:
-            if visit_stmt in lst_visited_stmt:
+    def _find_first_common_stmt(stack_parent, lst_stmt, lst_visited_stmt, ref_key="dominator"):
+        for stmt in lst_stmt:
+            if stmt in lst_visited_stmt:
                 continue
-            if visit_stmt in stack_parent:
-                return visit_stmt
-            lst_visited_stmt.append(visit_stmt)
-            lst_before_stmt = [b for a in visit_stmt.before_stmt.values() for b in a]
-            return_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, lst_visited_stmt)
+            if stmt in stack_parent:
+                return stmt
+            # TODO bug with visited, this solution not work, maybe need an iterator
+            lst_visited_stmt.append(stmt)
+            lst_before_stmt = [b for a in getattr(stmt, ref_stmt[ref_key]["before_stmt"]).values() for b in a]
+            return_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, lst_visited_stmt,
+                                                            ref_key="dominator")
             if return_stmt:
                 return return_stmt
 
     @staticmethod
-    def _generate_dominator_cfg(stmt=None, parent_stmt=None, visited_stmt=None):
+    def _generate_dominator_cfg(stmt=None, parent_stmt=None, visited_stmt=None, ref_key="dominator"):
+        """This function search dominator or post-dominator. Use ref_key to implement reverse."""
+        stmt_ref = ref_stmt[ref_key]
         # exit if stmt is None or already find dominator next stmt
-        if not stmt or stmt.dom_next_stmt:
+        if not stmt or getattr(stmt, stmt_ref["dom_next_stmt"]):
             return
 
-        if ParentStatement.count_total_stmt(stmt.before_stmt) > 1:
+        if ParentStatement.count_total_stmt(getattr(stmt, stmt_ref["before_stmt"])) > 1:
             # need to find who is the nearest stmt
-            lst_before_stmt = [b for a in stmt.before_stmt.values() for b in a if b != parent_stmt]
-            stack_parent = Statement._get_dominator_parent_stack(parent_stmt)
+            lst_before_stmt = [b for a in getattr(stmt, stmt_ref["before_stmt"]).values() for b in a if
+                               b != parent_stmt]
+            stack_parent = Statement._get_dominator_parent_stack(parent_stmt, ref_key=ref_key)
 
-            new_parent_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, [])
-            if new_parent_stmt != parent_stmt:
-                if stmt in parent_stmt.dom_next_stmt:
-                    parent_stmt.dom_next_stmt.remove(stmt)
+            new_parent_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, [], ref_key=ref_key)
+            if not new_parent_stmt:
+                print("Error, cannot find common parent of stmt %s" % stmt)
+            elif new_parent_stmt != parent_stmt:
+                if stmt in getattr(parent_stmt, stmt_ref["dom_next_stmt"]):
+                    getattr(parent_stmt, stmt_ref["dom_next_stmt"]).remove(stmt)
                 parent_stmt = new_parent_stmt
-                parent_stmt.dom_next_stmt.append(stmt)
+                getattr(parent_stmt, stmt_ref["dom_next_stmt"]).add(stmt)
 
-        elif not stmt.before_stmt and not stmt.is_root():
+        elif not getattr(stmt, stmt_ref["before_stmt"]) and not stmt.is_root():
             print("Error, all cfg stmt node suppose to have before_stmt.")
             return
 
@@ -360,13 +403,13 @@ class Statement(ASTObject, ParentStatement):
         print("Trace dom add %s" % stmt)
         visited_stmt.append(stmt)
         # merge list from list/list
-        stmt.dom_parent_stmt = parent_stmt
+        setattr(stmt, stmt_ref["dom_parent_stmt"], parent_stmt)
         # example, [[a, b], [c, d]] -> [a, b, c, d]
-        lst_next_stmt = [b for a in stmt.next_stmt.values() for b in a]
+        lst_next_stmt = [b for a in getattr(stmt, stmt_ref["next_stmt"]).values() for b in a]
         # for all stmt, find dominator
         for next_stmt in lst_next_stmt:
-            stmt.dom_next_stmt.append(next_stmt)
-            Statement._generate_dominator_cfg(next_stmt, parent_stmt=stmt, visited_stmt=visited_stmt)
+            getattr(stmt, stmt_ref["dom_next_stmt"]).add(next_stmt)
+            Statement._generate_dominator_cfg(next_stmt, parent_stmt=stmt, visited_stmt=visited_stmt, ref_key=ref_key)
 
     def _construct_description(self):
         for child in self.stmt_child:
@@ -423,6 +466,7 @@ class Statement(ASTObject, ParentStatement):
                 if not stmt2.is_block_stmt():
                     self.end_stmt.add_before_stmt(stmt2, stack_parent)
             else:
+                # this link the end of block when if alone or while
                 self.end_stmt.add_before_stmt(condition, stack_parent)
 
             stack_parent.pop()
@@ -456,6 +500,10 @@ class Statement(ASTObject, ParentStatement):
                 # remove end stmt, because no one point on it
                 stmt.end_stmt = None
                 break
+
+        # this fix when no return in function, link with last child
+        if self.is_root():
+            self.end_stmt.add_before_stmt(stmt, stack_parent)
 
     def _add_before_stmt_in_child(self, stmt, stack_parent):
         """Find last end of stmt block.
