@@ -51,6 +51,44 @@ class ParentStatement(object):
         self.location = Location(None)
         self.result_has_from_recursive = None
 
+        self.order_id = -1
+
+        # only Statement
+        self.stmt_child = []
+
+    def generator_child(self, ignore_unknown=True, ignore_empty_child=True, ignore_empty_cfg_child=True):
+        # TODO use yield and not this wrong technique
+        lst = [self] if ignore_empty_cfg_child and self.has_cfg_child() else []
+        for stmt in self.stmt_child:
+            if ignore_unknown and stmt.is_unknown:
+                continue
+            # if ignore_empty_child and not stmt.has_cfg_child():
+            #     continue
+            # if ignore_empty_cfg_child and not stmt.has_cfg_child(check_before_child=False, check_next_child=False):
+            #     continue
+            lst.extend(stmt.generator_child())
+        if self.end_stmt:
+            lst.append(self.end_stmt)
+        return lst
+
+    def has_cfg_child(self, check_before_child=True, check_next_child=True, condition=False):
+        """
+        :param check_before_child: bool check if has before_child
+        :param check_next_child: bool check if has next_child
+        :param condition: filter by None or str. If False, ignore it.
+        :return: bool if has child depend of param filter
+        """
+        result = False
+        if check_before_child and self.before_stmt:
+            if condition is False:
+                result = True
+                # elif condition in self.before_stmt:
+                #     result
+        elif check_next_child and self.next_stmt:
+            if condition is False:
+                result = True
+        return result
+
     def is_end(self):
         return bool(self.begin_stmt) and self.begin_stmt.end_stmt == self
 
@@ -114,7 +152,8 @@ class ParentStatement(object):
 
     def label(self):
         desc = "" if not self.description else "\n%s" % self.description
-        return "%s\nline %s%s" % (self.name, self.location.line, desc)
+        order = "#%s - " % self.order_id if self.order_id != -1 else ""
+        return "%s%s\nline %s%s" % (order, self.name, self.location.line, desc)
 
     def has_from_recursive(self, stmt=None):
         # TODO need to clean here
@@ -179,8 +218,9 @@ class ParentStatement(object):
         contain_info = info_from or info_to
         info_dom = " - dom %s" % self.dom_next_stmt if contain_info and self.dom_next_stmt else ""
         info_post_dom = " - post-dom %s" % self.post_dom_next_stmt if contain_info and self.post_dom_next_stmt else ""
-        tuple_info = (info_from, info_to, info_dom, info_post_dom)
-        return "%s%s%s%s" % tuple_info
+        order = " - #%s" % self.order_id if self.order_id != -1 else ""
+        tuple_info = (order, info_from, info_to, info_dom, info_post_dom)
+        return "%s%s%s%s%s" % tuple_info
 
     @staticmethod
     def get_first_end_before_stmt(stmt, stack_parent):
@@ -287,7 +327,8 @@ class FakeStatement(ParentStatement):
         self.is_unknown = False
 
     def label(self):
-        return "%s\nline %s" % (self.name, self.location.line)
+        order = "#%s - " % self.order_id if self.order_id != -1 else ""
+        return "%s%s\nline %s" % (order, self.name, self.location.line)
 
     def is_root(self):
         return self.begin_stmt.is_root()
@@ -309,7 +350,6 @@ class Statement(ASTObject, ParentStatement):
 
         self.is_unknown = self.name == "UNKNOWN" and not is_condition
         self.unique_name = uuid.uuid4()
-        self.stmt_child = []
         self._is_condition = is_condition
         self.stmt_condition = None
         # self.contain_else = False
@@ -341,6 +381,15 @@ class Statement(ASTObject, ParentStatement):
             self._generate_dominator_cfg(stmt=self, visited_stmt=[], ref_key="dominator")
             # generate node of post-dominator
             self._generate_dominator_cfg(stmt=self.end_stmt, visited_stmt=[], ref_key="post_dominator")
+            # add order id to verbose debug
+            self._add_order_id()
+
+    def _add_order_id(self):
+        order_id = 0
+        lst_generator_child = self.generator_child()
+        for stmt in lst_generator_child:
+            order_id += 1
+            stmt.order_id = order_id
 
     @staticmethod
     def _get_dominator_parent_stack(stmt, ref_key="dominator"):
@@ -387,7 +436,7 @@ class Statement(ASTObject, ParentStatement):
 
             new_parent_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, [], ref_key=ref_key)
             if not new_parent_stmt:
-                print("Error, cannot find common parent of stmt %s" % stmt)
+                print("Error, %s cannot find common parent of stmt %s" % (ref_key, stmt))
             elif new_parent_stmt != parent_stmt:
                 if stmt in getattr(parent_stmt, stmt_ref["dom_next_stmt"]):
                     getattr(parent_stmt, stmt_ref["dom_next_stmt"]).remove(stmt)
@@ -395,12 +444,12 @@ class Statement(ASTObject, ParentStatement):
                 getattr(parent_stmt, stmt_ref["dom_next_stmt"]).add(stmt)
 
         elif not getattr(stmt, stmt_ref["before_stmt"]) and not stmt.is_root():
-            print("Error, all cfg stmt node suppose to have before_stmt.")
+            print("Error, %s all cfg stmt node suppose to have before_stmt, %s.", (ref_key, stmt))
             return
 
         if stmt in visited_stmt:
             return
-        print("Trace dom add %s" % stmt)
+        print("Trace %s add %s" % (ref_key, stmt))
         visited_stmt.append(stmt)
         # merge list from list/list
         setattr(stmt, stmt_ref["dom_parent_stmt"], parent_stmt)
