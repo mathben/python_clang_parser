@@ -56,41 +56,97 @@ class ParentStatement(object):
         # only Statement
         self.stmt_child = []
 
-    def generator_child(self, ignore_unknown=True, ignore_empty_child=True, ignore_empty_cfg_child=True):
+    def generator_child(self, ignore_unknown=True, ignore_empty_cfg_child=True):
         # TODO use yield and not this wrong technique
+        # compound is an empty_cfg
         lst = [self] if ignore_empty_cfg_child and self.has_cfg_child() else []
+
         for stmt in self.stmt_child:
             if ignore_unknown and stmt.is_unknown:
                 continue
-            # if ignore_empty_child and not stmt.has_cfg_child():
-            #     continue
-            # if ignore_empty_cfg_child and not stmt.has_cfg_child(check_before_child=False, check_next_child=False):
-            #     continue
-            lst.extend(stmt.generator_child())
-        if self.end_stmt:
+            # use param default value of ignore_empty_cfg_child
+            lst.extend(stmt.generator_child(ignore_unknown=ignore_unknown))
+
+        if self.is_block_stmt() or self.is_root():
             lst.append(self.end_stmt)
+
         return lst
 
-    def has_cfg_child(self, check_before_child=True, check_next_child=True, condition=False):
-        """
-        :param check_before_child: bool check if has before_child
-        :param check_next_child: bool check if has next_child
-        :param condition: filter by None or str. If False, ignore it.
-        :return: bool if has child depend of param filter
-        """
-        result = False
-        if check_before_child and self.before_stmt:
-            if condition is False:
-                result = True
-                # elif condition in self.before_stmt:
-                #     result
-        elif check_next_child and self.next_stmt:
-            if condition is False:
-                result = True
-        return result
+    def generator_sibling(self, str_next_sibling, lst_visitor, get_before_stmt=True, stop_reach_stmt=None,
+                          ignore_first_stmt_sibling=None, ref_key="dominator"):
+        # TODO use yield and not this wrong technique
+        lst = self.get_cfg_sibling(check_before_stmt=get_before_stmt, check_next_stmt=not get_before_stmt,
+                                   ref_key=ref_key)
+        if ignore_first_stmt_sibling and ignore_first_stmt_sibling in lst and not lst_visitor:
+            lst.remove(ignore_first_stmt_sibling)
+
+        for stmt in lst:
+            if stmt in lst_visitor:
+                continue
+            else:
+                lst_visitor.append(stmt)
+                if ignore_first_stmt_sibling in lst_visitor:
+                    return
+            # for finding sibling stmt, append generator_sibling with no ignore this time
+            is_reach = stmt.generator_sibling(str_next_sibling, lst_visitor, get_before_stmt=get_before_stmt,
+                                              stop_reach_stmt=stop_reach_stmt,
+                                              ignore_first_stmt_sibling=ignore_first_stmt_sibling, ref_key=ref_key)
+            if stmt == stop_reach_stmt:
+                # stop searching if reach this stmt
+                return True
+            if is_reach:
+                return
+
+    def has_cfg_child(self, check_before_child=True, check_next_child=True, condition=False, ref_key="dominator"):
+        return bool(self.get_cfg_sibling(check_before_stmt=check_before_child,
+                                         check_next_stmt=check_next_child,
+                                         condition=condition,
+                                         ref_key=ref_key,
+                                         get_fast_answer=True
+                                         ))
+
+    def get_cfg_sibling(self, check_before_stmt=True, check_next_stmt=True, condition=False, get_fast_answer=False,
+                        ref_key="dominator"):
+        # """
+        # :param ref_key:
+        # :param check_before_child: bool check if has before_child
+        # :param check_next_child: bool check if has next_child
+        # :param condition: filter by None or str. If False, ignore it.
+        # :return: bool if has child depend of param filter
+        # """
+        stmt_ref = ref_stmt[ref_key]
+        lst_child = set()
+
+        def get_cfg_child_side(check_side, str_stmt_side):
+            stmt_side = getattr(self, stmt_ref[str_stmt_side])
+            if check_side and stmt_side:
+                # TODO add more option
+                if condition is False:
+                    for c in self.get_child(stmt_side):
+                        lst_child.update(c)
+                        if get_fast_answer:
+                            return
+
+        if check_before_stmt:
+            get_cfg_child_side(check_before_stmt, "before_stmt")
+
+        if get_fast_answer and lst_child:
+            return lst_child
+
+        if check_next_stmt:
+            get_cfg_child_side(check_next_stmt, "next_stmt")
+
+        return lst_child
+
+    @staticmethod
+    def get_child(dct_stmt):
+        return [a for a in dct_stmt.values()]
 
     def is_end(self):
-        return bool(self.begin_stmt) and self.begin_stmt.end_stmt == self
+        if self.is_block_stmt():
+            # it's the end when end_stmt is itself
+            return self.end_stmt == self
+        return False
 
     def is_operator(self):
         return self.kind in util.dct_alias_operator_stmt
@@ -127,6 +183,7 @@ class ParentStatement(object):
 
     @staticmethod
     def remove_compound(stmt):
+        # TODO bug with compound, it suppose to be a block. This is why we delete it
         # this function remove compound stmt
         if not stmt:
             return
@@ -145,10 +202,6 @@ class ParentStatement(object):
             stmt.next_stmt = {}
         for stmt_child in stmt.stmt_child:
             ParentStatement.remove_compound(stmt_child)
-
-    @staticmethod
-    def count_total_stmt(dct_stmt):
-        return sum([len(a) for a in dct_stmt.values()])
 
     def label(self):
         desc = "" if not self.description else "\n%s" % self.description
@@ -308,8 +361,96 @@ class ParentStatement(object):
                 b_condition = "False" if "True" in stmt.next_stmt else "True"
             stmt.add_stmt(self, condition=b_condition)
 
+    @staticmethod
+    def _get_dominator_parent_stack(stmt, ref_key="dominator"):
+        stmt_ref = ref_stmt[ref_key]
+        # TODO use lambda
+        if not stmt:
+            return
+        stack_stmt = [stmt]
+        stmt = getattr(stmt, stmt_ref["dom_parent_stmt"])
+        while stmt:
+            stack_stmt.append(stmt)
+            stmt = getattr(stmt, stmt_ref["dom_parent_stmt"])
+
+        return stack_stmt
+
+    @staticmethod
+    def _find_first_common_stmt(stack_parent, lst_stmt):
+        set_stack = set(stack_parent)
+        set_stack.intersection_update(lst_stmt)
+        # find first occurrence
+        for stmt in stack_parent:
+            if stmt in set_stack:
+                return stmt
+
+    def _generate_dominator_cfg(self, ref_key="dominator"):
+        stmt_ref = ref_stmt[ref_key]
+        # get all validate child in cfg
+        lst_all_stmt = self.begin_stmt.generator_child()
+        if ref_key != "dominator":
+            lst_all_stmt = reversed(lst_all_stmt)
+        for stmt in lst_all_stmt:
+            lst_next = stmt.get_cfg_sibling(check_before_stmt=False, ref_key=ref_key)
+            lst_before = stmt.get_cfg_sibling(check_next_stmt=False, ref_key=ref_key)
+            if not (lst_next or lst_before):
+                # check if contain sibling
+                print("Error, %s all cfg stmt suppose to have before_stmt %s or next_stmt %s, %s.",
+                      (ref_key, lst_before, lst_next, stmt))
+                continue
+
+            if not lst_before:
+                # ignore it, maybe it's the root
+                continue
+
+            if len(lst_before) > 1:
+                # TODO merge this 2 solutions, stack and sibling common
+                # contain multiple before, need to find dominator
+                # stack = self._get_dominator_parent_stack(getattr(stmt, stmt_ref["dom_parent_stmt"]), ref_key=ref_key)
+                # before_sibling = getattr(stmt, stmt_ref["dom_parent_stmt"])
+                set_predecessor = set()
+                set_predecessor_stack = set()
+                for predecessor in lst_before:
+                    stack = self._get_dominator_parent_stack(getattr(predecessor, stmt_ref["dom_parent_stmt"]),
+                                                             ref_key=ref_key)
+                    if not stack:
+                        set_predecessor_stack = set()
+                        break
+
+                    if not set_predecessor_stack:
+                        set_predecessor_stack.update(stack)
+                    else:
+                        # fusion
+                        set_predecessor_stack.intersection_update(stack)
+                if not set_predecessor_stack:
+                    for predecessor in lst_before:
+                        lst_visitor = []
+                        stmt.generator_sibling("before_stmt", lst_visitor, get_before_stmt=True,
+                                               ignore_first_stmt_sibling=predecessor,
+                                               stop_reach_stmt=predecessor,
+                                               ref_key=ref_key)
+                        if not set_predecessor:
+                            set_predecessor.update(lst_visitor)
+                        else:
+                            # fusion
+                            set_predecessor.intersection_update(lst_visitor)
+                else:
+                    set_predecessor = set_predecessor_stack
+
+                if len(set_predecessor) == 1:
+                    common_stmt = set_predecessor.pop()
+                else:
+                    common_stmt = self._find_first_common_stmt(stack, set_predecessor)
+            else:
+                common_stmt = lst_before.pop()
+
+            # dominator is before stmt
+            getattr(common_stmt, stmt_ref["dom_next_stmt"]).add(stmt)
+            setattr(stmt, stmt_ref["dom_parent_stmt"], common_stmt)
+
     def __repr__(self):
-        return "'%s' l %s" % (self.name, self.location.line)
+        order = "#%s " % self.order_id if self.order_id != -1 else ""
+        return "%s'%s' l %s" % (order, self.name, self.location.line)
 
 
 class FakeStatement(ParentStatement):
@@ -377,12 +518,12 @@ class Statement(ASTObject, ParentStatement):
 
         if self.is_root():
             self.remove_compound(stmt=self)
-            # generate node of dominator
-            self._generate_dominator_cfg(stmt=self, visited_stmt=[], ref_key="dominator")
-            # generate node of post-dominator
-            self._generate_dominator_cfg(stmt=self.end_stmt, visited_stmt=[], ref_key="post_dominator")
             # add order id to verbose debug
             self._add_order_id()
+            # generate node of dominator
+            self._generate_dominator_cfg(ref_key="dominator")
+            # generate node of post-dominator
+            self._generate_dominator_cfg(ref_key="post_dominator")
 
     def _add_order_id(self):
         order_id = 0
@@ -390,75 +531,6 @@ class Statement(ASTObject, ParentStatement):
         for stmt in lst_generator_child:
             order_id += 1
             stmt.order_id = order_id
-
-    @staticmethod
-    def _get_dominator_parent_stack(stmt, ref_key="dominator"):
-        stmt_ref = ref_stmt[ref_key]
-        # TODO use lambda
-        if not stmt:
-            return
-        stack_stmt = [stmt]
-        stmt = getattr(stmt, stmt_ref["dom_parent_stmt"])
-        while stmt:
-            stack_stmt.append(stmt)
-            stmt = getattr(stmt, stmt_ref["dom_parent_stmt"])
-
-        return stack_stmt
-
-    @staticmethod
-    def _find_first_common_stmt(stack_parent, lst_stmt, lst_visited_stmt, ref_key="dominator"):
-        for stmt in lst_stmt:
-            if stmt in lst_visited_stmt:
-                continue
-            if stmt in stack_parent:
-                return stmt
-            # TODO bug with visited, this solution not work, maybe need an iterator
-            lst_visited_stmt.append(stmt)
-            lst_before_stmt = [b for a in getattr(stmt, ref_stmt[ref_key]["before_stmt"]).values() for b in a]
-            return_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, lst_visited_stmt,
-                                                            ref_key="dominator")
-            if return_stmt:
-                return return_stmt
-
-    @staticmethod
-    def _generate_dominator_cfg(stmt=None, parent_stmt=None, visited_stmt=None, ref_key="dominator"):
-        """This function search dominator or post-dominator. Use ref_key to implement reverse."""
-        stmt_ref = ref_stmt[ref_key]
-        # exit if stmt is None or already find dominator next stmt
-        if not stmt or getattr(stmt, stmt_ref["dom_next_stmt"]):
-            return
-
-        if ParentStatement.count_total_stmt(getattr(stmt, stmt_ref["before_stmt"])) > 1:
-            # need to find who is the nearest stmt
-            lst_before_stmt = [b for a in getattr(stmt, stmt_ref["before_stmt"]).values() for b in a if
-                               b != parent_stmt]
-            stack_parent = Statement._get_dominator_parent_stack(parent_stmt, ref_key=ref_key)
-
-            new_parent_stmt = Statement._find_first_common_stmt(stack_parent, lst_before_stmt, [], ref_key=ref_key)
-            if not new_parent_stmt:
-                print("Error, %s cannot find common parent of stmt %s" % (ref_key, stmt))
-            elif new_parent_stmt != parent_stmt:
-                if stmt in getattr(parent_stmt, stmt_ref["dom_next_stmt"]):
-                    getattr(parent_stmt, stmt_ref["dom_next_stmt"]).remove(stmt)
-                parent_stmt = new_parent_stmt
-                getattr(parent_stmt, stmt_ref["dom_next_stmt"]).add(stmt)
-
-        elif not getattr(stmt, stmt_ref["before_stmt"]) and not stmt.is_root():
-            print("Error, %s all cfg stmt node suppose to have before_stmt, %s.", (ref_key, stmt))
-            return
-
-        if stmt in visited_stmt:
-            return
-        print("Trace %s add %s" % (ref_key, stmt))
-        visited_stmt.append(stmt)
-        # merge list from list/list
-        setattr(stmt, stmt_ref["dom_parent_stmt"], parent_stmt)
-        # example, [[a, b], [c, d]] -> [a, b, c, d]
-        lst_next_stmt = [b for a in getattr(stmt, stmt_ref["next_stmt"]).values() for b in a]
-        # for all stmt, find dominator
-        for next_stmt in lst_next_stmt:
-            getattr(stmt, stmt_ref["dom_next_stmt"]).add(next_stmt)
-            Statement._generate_dominator_cfg(next_stmt, parent_stmt=stmt, visited_stmt=visited_stmt, ref_key=ref_key)
 
     def _construct_description(self):
         for child in self.stmt_child:
@@ -475,6 +547,12 @@ class Statement(ASTObject, ParentStatement):
                 # create new end_stmt
                 end_location = Location(cursor.extent.end)
                 self.end_stmt = FakeStatement("end " + self.name, begin_stmt=self, location=end_location)
+            self.begin_stmt = self
+            self.end_stmt.end_stmt = self.end_stmt
+        else:
+            # non-block, end and begin will ref in same stmt
+            self.begin_stmt = self
+            self.end_stmt = self
 
         if not self.is_root():
             # TODO optimise this stack_parent

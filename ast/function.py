@@ -101,7 +101,7 @@ class Function(ASTObject):
                     print_cfg_child(child, level=level + 1, no_iter=child_iter)
                     child_iter += 1
 
-            if stmt.end_stmt:
+            if stmt.is_block_stmt() or stmt.is_root():
                 end_stmt = stmt.end_stmt
                 do_print = True  # end_stmt.has_from_recursive()
                 if do_print:
