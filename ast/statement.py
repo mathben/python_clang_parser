@@ -3,6 +3,7 @@
 
 import uuid
 
+import variable
 from ast_object import ASTObject
 from clang_parser import clang
 from location import Location
@@ -52,20 +53,24 @@ class ParentStatement(object):
         self.result_has_from_recursive = None
 
         self.order_id = -1
+        self.variable = None
 
         # only Statement
         self.stmt_child = []
 
-    def generator_child(self, ignore_unknown=True, ignore_empty_cfg_child=True):
+    def generator_child(self, ignore_unknown=True, ignore_empty_cfg_child=True, add_variable=False):
         # TODO use yield and not this wrong technique
         # compound is an empty_cfg
-        lst = [self] if ignore_empty_cfg_child and self.has_cfg_child() else []
+        lst = []
+        if self.has_cfg_child() or \
+                ignore_empty_cfg_child and (add_variable and self.is_variable_operator() or self.variable):
+            lst.append(self)
 
         for stmt in self.stmt_child:
             if ignore_unknown and stmt.is_unknown:
                 continue
             # use param default value of ignore_empty_cfg_child
-            lst.extend(stmt.generator_child(ignore_unknown=ignore_unknown))
+            lst.extend(stmt.generator_child(ignore_unknown=ignore_unknown, add_variable=add_variable))
 
         if self.is_block_stmt() or self.is_root():
             lst.append(self.end_stmt)
@@ -151,6 +156,9 @@ class ParentStatement(object):
     def is_operator(self):
         return self.kind in util.dct_alias_operator_stmt
 
+    def is_variable_operator(self):
+        return self.kind in util.dct_alias_variable_stmt
+
     def is_compound(self):
         return self.kind in util.dct_alias_compound_stmt and not self.is_root()
 
@@ -159,6 +167,9 @@ class ParentStatement(object):
 
     def is_common_stmt(self):
         return self.kind in util.dct_alias_common_stmt
+
+    def is_declare_variable_stmt(self):
+        return self.kind is clang.cindex.CursorKind.VAR_DECL
 
     def is_block_stmt(self):
         return self.kind in util.dct_alias_block_stmt
@@ -516,6 +527,8 @@ class Statement(ASTObject, ParentStatement):
         if self.kind in util.dct_alias_operator_stmt:
             self._construct_description()
 
+        self._get_variable(cursor)
+
         if self.is_root():
             self.remove_compound(stmt=self)
             # add order id to verbose debug
@@ -525,9 +538,31 @@ class Statement(ASTObject, ParentStatement):
             # generate node of post-dominator
             self._generate_dominator_cfg(ref_key="post_dominator")
 
+    def _get_variable(self, cursor):
+        # search gen/kill variable
+        if not self.is_variable_operator():
+            return
+        # if operator, validate it's an assignation operator
+        if self.kind is clang.cindex.CursorKind.BINARY_OPERATOR:
+            # get first punctuation token to verify it's an assignation
+            lst_token = [a for a in cursor.get_tokens() if a.kind is clang.cindex.TokenKind.PUNCTUATION]
+            if not lst_token or lst_token[0].spelling != "=":
+                return
+
+        lst_declare = []
+        lst_gen = []
+        for stmt in self.stmt_child:
+            if stmt.is_declare_variable_stmt():
+                lst_declare.append(variable.Variable(stmt))
+            elif stmt.kind is clang.cindex.CursorKind.DECL_REF_EXPR:
+                lst_gen.append(variable.Variable(stmt))
+
+        if lst_declare or lst_gen:
+            self.variable = variable.OperatorVariable(lst_declare=lst_declare, lst_gen=lst_gen)
+
     def _add_order_id(self):
         order_id = 0
-        lst_generator_child = self.generator_child()
+        lst_generator_child = self.generator_child(ignore_empty_cfg_child=True, add_variable=True)
         for stmt in lst_generator_child:
             order_id += 1
             stmt.order_id = order_id

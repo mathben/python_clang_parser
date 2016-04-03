@@ -25,6 +25,16 @@ dct_alias_operator_stmt = {
     clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
     clang.cindex.CursorKind.UNARY_OPERATOR: "operator",
     clang.cindex.CursorKind.CALL_EXPR: "call",
+    clang.cindex.CursorKind.VAR_DECL: "dcl_var",
+    clang.cindex.CursorKind.DECL_REF_EXPR: "dcl_ref_expr",
+}
+
+dct_alias_variable_stmt = {
+    clang.cindex.CursorKind.DECL_STMT: "declare",
+    clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
+    # clang.cindex.CursorKind.UNARY_OPERATOR: "operator",
+    # clang.cindex.CursorKind.CALL_EXPR: "call",
+    clang.cindex.CursorKind.VAR_DECL: "dcl_var",
 }
 
 dct_alias_var_stmt = {

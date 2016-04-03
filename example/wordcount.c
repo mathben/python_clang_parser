@@ -3,7 +3,7 @@
 
 #define YES 1
 #define NO 0
-int main()
+void main()
 {
     int c, nl, nw, nc, inword;
     inword = NO;
@@ -26,7 +26,5 @@ int main()
     printf("%d \n", nl);
     printf("%d \n", nw);
     printf("%d \n", nc);
-
-    return 0;
 }
 
