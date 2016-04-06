@@ -32,7 +32,7 @@ dct_alias_operator_stmt = {
 dct_alias_variable_stmt = {
     clang.cindex.CursorKind.DECL_STMT: "declare",
     clang.cindex.CursorKind.BINARY_OPERATOR: "operator",
-    # clang.cindex.CursorKind.UNARY_OPERATOR: "operator",
+    clang.cindex.CursorKind.UNARY_OPERATOR: "operator",
     # clang.cindex.CursorKind.CALL_EXPR: "call",
     clang.cindex.CursorKind.VAR_DECL: "dcl_var",
 }

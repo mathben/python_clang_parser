@@ -74,7 +74,8 @@ class Function(ASTObject):
         if len(start_stmt_cursor) != 1:
             print("Error, cannot find stmt child into function %s" % self)
             return None
-        return Statement(start_stmt_cursor[0], count_stmt=self.lst_cfg, method_obj=self)
+        return Statement(start_stmt_cursor[0], count_stmt=self.lst_cfg, method_obj=self,
+                         param_decl=[a for a in cursor.get_children()][:-1])
 
     def merge(self, fct):
         if not isinstance(fct, Function):

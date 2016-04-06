@@ -58,21 +58,26 @@ class ParentStatement(object):
         # only Statement
         self.stmt_child = []
 
-    def generator_child(self, ignore_unknown=True, ignore_empty_cfg_child=True, add_variable=False):
+        self.reach_definition = None
+
+    def generator_child(self, ignore_unknown=True, ignore_empty_cfg_child=True, add_variable=False,
+                        field_name_not_empty=None):
         # TODO use yield and not this wrong technique
         # compound is an empty_cfg
         lst = []
-        if self.has_cfg_child() or \
-                ignore_empty_cfg_child and (add_variable and self.is_variable_operator() or self.variable):
-            lst.append(self)
+        if self.has_cfg_child() or ignore_empty_cfg_child and (
+                        add_variable and self.is_variable_operator() or self.variable):
+            if not field_name_not_empty or (field_name_not_empty and getattr(self, field_name_not_empty)):
+                lst.append(self)
 
         for stmt in self.stmt_child:
             if ignore_unknown and stmt.is_unknown:
                 continue
             # use param default value of ignore_empty_cfg_child
-            lst.extend(stmt.generator_child(ignore_unknown=ignore_unknown, add_variable=add_variable))
+            lst.extend(stmt.generator_child(ignore_unknown=ignore_unknown, add_variable=add_variable,
+                                            field_name_not_empty=field_name_not_empty))
 
-        if self.is_block_stmt() or self.is_root():
+        if (self.is_block_stmt() or self.is_root()) and self in lst:
             lst.append(self.end_stmt)
 
         return lst
@@ -148,7 +153,7 @@ class ParentStatement(object):
         return [a for a in dct_stmt.values()]
 
     def is_end(self):
-        if self.is_block_stmt():
+        if self.is_block_stmt() or self.is_root():
             # it's the end when end_stmt is itself
             return self.end_stmt == self
         return False
@@ -388,6 +393,10 @@ class ParentStatement(object):
 
     @staticmethod
     def _find_first_common_stmt(stack_parent, lst_stmt):
+        if not stack_parent:
+            # TODO this seems wrong
+            return lst_stmt.pop()
+
         set_stack = set(stack_parent)
         set_stack.intersection_update(lst_stmt)
         # find first occurrence
@@ -488,7 +497,7 @@ class FakeStatement(ParentStatement):
 
 class Statement(ASTObject, ParentStatement):
     def __init__(self, cursor, force_name=None, count_stmt=None, is_condition=False, method_obj=None,
-                 stack_parent=None, before_stmt=None):
+                 stack_parent=None, before_stmt=None, param_decl=None):
         super(Statement, self).__init__(cursor, filename=None, store_variable=False)
 
         if force_name:
@@ -527,7 +536,7 @@ class Statement(ASTObject, ParentStatement):
         if self.kind in util.dct_alias_operator_stmt:
             self._construct_description()
 
-        self._get_variable(cursor)
+        self._get_variable(cursor, param_decl=param_decl)
 
         if self.is_root():
             self.remove_compound(stmt=self)
@@ -537,10 +546,12 @@ class Statement(ASTObject, ParentStatement):
             self._generate_dominator_cfg(ref_key="dominator")
             # generate node of post-dominator
             self._generate_dominator_cfg(ref_key="post_dominator")
+            # generate reach definition
+            variable.ReachDefinition.generate_reach_definition(self)
 
-    def _get_variable(self, cursor):
+    def _get_variable(self, cursor, param_decl=None):
         # search gen/kill variable
-        if not self.is_variable_operator():
+        if not self.is_variable_operator() and not param_decl:
             return
         # if operator, validate it's an assignation operator
         if self.kind is clang.cindex.CursorKind.BINARY_OPERATOR:
@@ -557,8 +568,12 @@ class Statement(ASTObject, ParentStatement):
             elif stmt.kind is clang.cindex.CursorKind.DECL_REF_EXPR:
                 lst_gen.append(variable.Variable(stmt))
 
+        if param_decl:
+            for param in param_decl:
+                lst_declare.append(variable.Variable(Statement(param)))
+
         if lst_declare or lst_gen:
-            self.variable = variable.OperatorVariable(lst_declare=lst_declare, lst_gen=lst_gen)
+            self.variable = variable.OperatorVariable(self, lst_declare=lst_declare, lst_gen=lst_gen)
 
     def _add_order_id(self):
         order_id = 0
