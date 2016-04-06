@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 
 # from ast_object import ASTObject
+from collections import defaultdict
 
 
 class ReachDefinition(object):
     @staticmethod
     def generate_reach_definition(cfg_root):
-        lst_operator_var = cfg_root.generator_child(add_variable=True, field_name_not_empty="variable")
-        lst_operator_var = [a.variable for a in lst_operator_var if not a.is_end()]
+        lst_operator_var = cfg_root.generator_child(add_variable=True, field_name_not_empty="operator_variable")
+        lst_operator_var = [a.operator_variable for a in lst_operator_var if not a.is_end()]
 
         id_def = 0
         lst_unique_var_gen = []
@@ -23,41 +24,64 @@ class ReachDefinition(object):
         for op_var in lst_operator_var:
             op_var.set_lst_unique_var_gen(lst_unique_var_gen)
 
+        # prepare variable for each node
+        # 0 on all node
+        lst_stmt = cfg_root.generator_child()
+        for stmt in lst_stmt:
+            if not stmt.operator_variable:
+                stmt.operator_variable = OperatorVariable(stmt)
+
         # process IN and OUT
-        ReachDefinition.process_reach_definition(cfg_root)
+        ReachDefinition.process_reach_definition(lst_stmt)
+
+        # data dependency
+        ReachDefinition.process_data_dependency(lst_stmt, lst_operator_var)
 
     @staticmethod
-    def process_reach_definition(cfg_root):
-        lst_stmt = cfg_root.generator_child()
-        # 0 on all node
-        for stmt in lst_stmt:
-            if stmt.variable and not stmt.reach_definition:
-                stmt.reach_definition = stmt.variable
-            elif not stmt.reach_definition:
-                stmt.reach_definition = OperatorVariable(stmt)
-
+    def process_reach_definition(lst_stmt):
         has_change = True
         while has_change:
             has_change = False
             for stmt in lst_stmt:
-                has_change |= stmt.reach_definition.process_reach_definition()
+                has_change |= stmt.operator_variable.process_reach_definition()
+
+    @staticmethod
+    def process_data_dependency(lst_stmt, lst_stmt_gen):
+        # find gen dependency on use variable
+        for stmt in lst_stmt:
+            if stmt.operator_variable.lst_use:
+                lst_use = stmt.operator_variable.lst_use
+
+                for var in lst_use:
+                    # find association with lst_stmt_gen
+                    for stmt_gen in lst_stmt_gen:
+                        for name, gen_var in stmt_gen.lst_gen_name_link():
+                            if var.name == name:
+                                stmt.operator_variable.lst_use_link[var.name].append(gen_var)
 
 
 class OperatorVariable(object):
-    def __init__(self, stmt, lst_declare=[], lst_gen=[]):
+    def __init__(self, stmt, lst_declare=[], lst_gen=[], lst_use=[]):
         self.stmt = stmt
-        self.lst_declare = set(lst_declare)
-        self.lst_gen = set(lst_gen)
         self.lst_var = set(lst_declare + lst_gen)
+        self.lst_use = []
         self.kill = []
 
         self.reach_def_in = []
         self.reach_def_out = []
+        self.lst_use_link = defaultdict(list)
+
+        self.set_lst_use(lst_use)
 
         for var in self.lst_var:
             var.set_operator_variable(self)
 
         self.lst_var_name = [a.name for a in self.lst_var]
+
+    def set_lst_use(self, lst_use):
+        for var_use in lst_use:
+            if var_use not in self.lst_use:
+                self.lst_use.append(var_use)
 
     def process_reach_definition(self):
         stmt = self.stmt
@@ -65,9 +89,9 @@ class OperatorVariable(object):
         # U EX[P]
         union_in = set()
         if stmt.before_stmt:
-            for prec in [b for a in stmt.get_child(stmt.before_stmt) for b in list(a)]:
-                if prec.reach_definition.reach_def_out:
-                    last_out = prec.reach_definition.reach_def_out[-1]
+            for last_stmt in [b for a in stmt.get_child(stmt.before_stmt) for b in list(a)]:
+                if last_stmt.operator_variable.reach_def_out:
+                    last_out = last_stmt.operator_variable.reach_def_out[-1]
                     union_in.update(last_out)
         self.reach_def_in.append(union_in)
         # OUT
@@ -122,6 +146,16 @@ class OperatorVariable(object):
 
     def lst_gen_name(self):
         return sorted([a.name_def() for a in self.lst_var])
+
+    def lst_gen_name_link(self):
+        return sorted([(a.name, a) for a in self.lst_var])
+
+    def lst_use_name(self):
+        return sorted([a.name for a in self.lst_use])
+
+    def lst_use_name_link(self):
+        return ", ".join(
+            ["%s - [%s]" % (key, " ".join([a.name_def() for a in value])) for key, value in self.lst_use_link.items()])
 
     def lst_reach_def_out_name(self):
         return sorted([a.name_def() for a in list(self.reach_def_out[-1])])

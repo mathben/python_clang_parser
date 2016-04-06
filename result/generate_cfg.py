@@ -49,7 +49,8 @@ class GenerateCfg(object):
         print("Info valid cfg %s %.2f%% on invalid cfg %s." % (count_valid_method, ratio_valid_cfg,
                                                                count_invalid_method))
 
-    def _build_label(self, cfg, key_label):
+    @staticmethod
+    def _build_label(cfg, key_label):
         label = key_label if cfg.is_root() else ""
         order = "#%s - " % cfg.order_id if cfg.order_id != -1 else ""
         str_grid = """
@@ -57,39 +58,50 @@ class GenerateCfg(object):
                    <tr><td port="a" bgcolor="#D0D0D0" colspan="4">%s%s %s <font color="green">line %s</font></td></tr>
         """.strip() % (order, label, cfg.name, cfg.location.line)
 
-        if cfg.variable and not cfg.is_end():
-            var_str = " ".join(cfg.variable.lst_var_link_name())
-            str_grid += """
-                       <tr><td port="f">Var</td><td port="g">%s</td><td port="h"></td><td port="i"></td></tr>
-            """.strip() % var_str
+        if cfg.operator_variable:
+            var_cfg = cfg.operator_variable
+            var_str = ""
+            if var_cfg.lst_var:
+                var_str = " ".join(var_cfg.lst_var_link_name())
 
-            gen_str = " ".join(cfg.variable.lst_gen_name())
-            if not gen_str:
-                gen_str = "-"
+            var_use_str = ""
+            if var_cfg.lst_use:
+                # var_use_str = " ".join(var_cfg.lst_use_name())
+                var_use_str = var_cfg.lst_use_name_link()
 
-            kill_str = " ".join(cfg.variable.lst_kill_name())
-            if not kill_str:
-                kill_str = "-"
+            if var_use_str or var_str:
+                str_grid += """
+                           <tr><td port="f">%s</td><td port="g">%s</td><td port="h">%s</td><td port="i">%s</td></tr>
+                """.strip() % ("Var" if var_str else "", var_str, "Use" if var_use_str else "", var_use_str)
 
-            str_grid += """
-                       <tr><td port="b">Gen</td><td port="c">%s</td><td port="d">Kill</td><td port="e">%s</td></tr>
-            """.strip() % (gen_str, kill_str)
+            if var_cfg.lst_var:
+                gen_str = " ".join(var_cfg.lst_gen_name())
+                if not gen_str:
+                    gen_str = "-"
 
-        if cfg.reach_definition:
-            reach_def_in_str = " ".join(cfg.reach_definition.lst_reach_def_in_name())
-            if not reach_def_in_str:
-                reach_def_in_str = "-"
+                kill_str = " ".join(var_cfg.lst_kill_name())
+                if not kill_str:
+                    kill_str = "-"
 
-            reach_def_out_str = " ".join(cfg.reach_definition.lst_reach_def_out_name())
-            if not reach_def_out_str:
-                reach_def_out_str = "-"
+                str_grid += """
+                           <tr><td port="b">Gen</td><td port="c">%s</td><td port="d">Kill</td><td port="e">%s</td></tr>
+                """.strip() % (gen_str, kill_str)
 
-            nb_iteration = len(cfg.reach_definition.reach_def_in)
+            if var_cfg.reach_def_in:
+                reach_def_in_str = " ".join(var_cfg.lst_reach_def_in_name())
+                if not reach_def_in_str:
+                    reach_def_in_str = "-"
 
-            str_grid += """
-                       <tr><td port="j">Reach def IN (%s)</td><td port="l">%s</td>
-                       <td port="k">Reach def OUT</td><td port="m">%s</td></tr>
-            """.strip() % (nb_iteration, reach_def_in_str, reach_def_out_str)
+                reach_def_out_str = " ".join(var_cfg.lst_reach_def_out_name())
+                if not reach_def_out_str:
+                    reach_def_out_str = "-"
+
+                nb_iteration = len(var_cfg.reach_def_in)
+
+                str_grid += """
+                           <tr><td port="j">Reach def IN (%s)</td><td port="l">%s</td>
+                           <td port="k">Reach def OUT</td><td port="m">%s</td></tr>
+                """.strip() % (nb_iteration, reach_def_in_str, reach_def_out_str)
 
         str_grid += """
                 </table>>

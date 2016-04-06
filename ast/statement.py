@@ -53,12 +53,10 @@ class ParentStatement(object):
         self.result_has_from_recursive = None
 
         self.order_id = -1
-        self.variable = None
+        self.operator_variable = None
 
         # only Statement
         self.stmt_child = []
-
-        self.reach_definition = None
 
     def generator_child(self, ignore_unknown=True, ignore_empty_cfg_child=True, add_variable=False,
                         field_name_not_empty=None):
@@ -66,7 +64,7 @@ class ParentStatement(object):
         # compound is an empty_cfg
         lst = []
         if self.has_cfg_child() or ignore_empty_cfg_child and (
-                        add_variable and self.is_variable_operator() or self.variable):
+                        add_variable and self.is_variable_operator() or self.operator_variable):
             if not field_name_not_empty or (field_name_not_empty and getattr(self, field_name_not_empty)):
                 lst.append(self)
 
@@ -573,7 +571,12 @@ class Statement(ASTObject, ParentStatement):
                 lst_declare.append(variable.Variable(Statement(param)))
 
         if lst_declare or lst_gen:
-            self.variable = variable.OperatorVariable(self, lst_declare=lst_declare, lst_gen=lst_gen)
+            # search use variable
+            # TODO hack to search use variable for wordcount
+            lst_use = [variable.Variable(Statement(a)) for a in cursor.walk_preorder() if
+                       a.kind is clang.cindex.CursorKind.DECL_REF_EXPR and a.spelling != 'getchar'][1:]
+            self.operator_variable = variable.OperatorVariable(self, lst_declare=lst_declare, lst_gen=lst_gen,
+                                                               lst_use=lst_use)
 
     def _add_order_id(self):
         order_id = 0
@@ -625,10 +628,16 @@ class Statement(ASTObject, ParentStatement):
                 print("Error, block stmt suppose to have greater or equal of 2 children.")
                 return
 
+            condition_cursor = lst_child[0]
             condition = Statement(lst_child[0], count_stmt=count_stmt, is_condition=True, stack_parent=stack_parent,
                                   before_stmt=self)
             self.stmt_condition = condition
             self.stmt_child.append(condition)
+
+            # find if used variable
+            lst_var_use = [variable.Variable(Statement(a)) for a in condition_cursor.walk_preorder() if
+                           a.kind is clang.cindex.CursorKind.DECL_REF_EXPR]
+            condition.operator_variable = variable.OperatorVariable(condition, lst_use=lst_var_use)
 
             stmt1 = Statement(lst_child[1], count_stmt=count_stmt, is_condition=False, stack_parent=stack_parent,
                               before_stmt=condition)
@@ -664,6 +673,16 @@ class Statement(ASTObject, ParentStatement):
                              before_stmt=before_stmt)
 
             self.stmt_child.append(stmt)
+            # find variable usage in call expression
+            if child.kind is clang.cindex.CursorKind.CALL_EXPR:
+                lst_var_use = [variable.Variable(Statement(a)) for a in child.walk_preorder() if
+                               a.kind is clang.cindex.CursorKind.DECL_REF_EXPR and a.spelling != 'getchar' \
+                               and a.spelling != 'printf']
+                if lst_var_use:
+                    if not stmt.operator_variable:
+                        stmt.operator_variable = variable.OperatorVariable(stmt, lst_use=lst_var_use)
+                    else:
+                        stmt.operator_variable.set_lst_use(lst_var_use)
 
             # keep reference of last child
             before_stmt = stmt.end_stmt if stmt.end_stmt else stmt
