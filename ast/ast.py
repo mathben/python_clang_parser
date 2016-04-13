@@ -21,7 +21,9 @@ def build_classes(cursor, filename, dir_name, arg_parser, is_first_call=True):
 
     # not work with .hh and .cc in same time
     # TODO use os path function
-    header_filename = filename[filename.rfind("/"):-3]
+    # TODO need to check if children is not already parse
+    # TODO this technique seems bad to ignore other file from header and source into project
+    header_filename = filename[filename.rfind("/") + 1:-4]
     children_cursor = [m for m in cursor.get_children() if m.location.file and dir_name in m.location.file.name and
                        header_filename in m.location.file.name and m.kind in all_kind]
 

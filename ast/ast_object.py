@@ -17,6 +17,7 @@ class ASTObject(object):
         self.mangled_name = cursor.mangled_name
         self._access_specifier = cursor.access_specifier.value
         self.type = cursor.type.spelling
+        self._kind_type_id = cursor.type.kind.value
 
         self.file_name = filename if filename else self.location.file.name
         self.variable = ASTObject.get_variables(cursor) if store_variable else []
@@ -26,6 +27,10 @@ class ASTObject(object):
     @property
     def kind(self):
         return clang.cindex.CursorKind.from_id(self._kind_id)
+
+    @property
+    def type_kind(self):
+        return clang.cindex.TypeKind.from_id(self._kind_type_id)
 
     @property
     def access_specifier(self):
@@ -58,10 +63,13 @@ class ASTObject(object):
 
     @staticmethod
     def get_variables(cursor):
-        lst_kind_var = [clang.cindex.CursorKind.VAR_DECL]
-        return [Variable(c_child, c_child.location.file.name, store_variable=False) for c_child in
-                cursor.walk_preorder() if
-                c_child.kind in lst_kind_var]
+        # lst_supported_type = []
+        lst_blacklist_type_kind = [
+            clang.cindex.TypeKind.CONSTANTARRAY  # this is struct type
+        ]
+        lst_kind_var = [clang.cindex.CursorKind.VAR_DECL, clang.cindex.CursorKind.FIELD_DECL]
+        return [Variable(c, c.location.file.name, store_variable=False) for c in
+                cursor.walk_preorder() if c.kind in lst_kind_var and c.type.kind not in lst_blacklist_type_kind]
 
 
 class Variable(ASTObject):

@@ -60,6 +60,8 @@ def parse_args():
                             'If not specified, working_path will be root_directory.')
     group.add_argument('--exclude_path', default="",
                        help='Exclude path of analysing.')
+    group.add_argument('--white_path', default="",
+                       help='Path of white list. If not empty, only file from this path will be include.')
     group.add_argument('--graph_path', default="graph",
                        help='Specify path of graph generation.')
     group.add_argument('--translation_unit_dir',
@@ -181,6 +183,7 @@ def validate_parser(_arg_parser):
     lst_file = []
     # TODO create absolute path with exclude path
     lst_exclude_path = _parser.exclude_path.split(";") if _parser.exclude_path else []
+    lst_white_path = _parser.white_path.split(";") if _parser.white_path else []
 
     for _file in _lst_file:
         # ignore path
@@ -191,6 +194,13 @@ def validate_parser(_arg_parser):
                 break
         if is_ignore:
             continue
+        # white path
+        for white_path in lst_white_path:
+            if white_path in _file:
+                break
+        else:
+            if lst_white_path:
+                continue
         lst_file.append(_file[_pos_cut_path:])
 
     _parser.files = lst_file

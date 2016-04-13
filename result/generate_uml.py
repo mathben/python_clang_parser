@@ -22,8 +22,8 @@ class GenerateUml(object):
 
         self._add_class_dot()
 
-        self.g.layout(prog='circo')
-        self.g.draw(path=self.file_path + "_circo.svgz", format='svgz')
+        self.g.layout(prog='dot')
+        self.g.draw(path=self.file_path + "_dot.svgz", format='svgz')
 
         self.g.write(self.file_path)
 
