@@ -5,6 +5,10 @@ Python application with Clang python wrapper to parse static code c++
 - Analyse static c++ code only with source file and emplacement of header file.
 - Create csv with statistic analyse
 - Parallelism execution
+- Create CFG, support only example directory
+    - Create dominant, post-dominant graph
+    - Reach definition
+    - Alive variable
 
 ## TODO
 - Load config file to start execution. Contain application argument
@@ -16,10 +20,17 @@ python2
 libclang, the Clang python binding
 
 ### Ubuntu
-This dependence is to generate the UML
+This dependence is to generate graph
 ```{r, engine='bash', count_lines}
 sudo apt-get install python-pip
-sudo python-pip install graphviz
+sudo python-pip install pygraphviz
+```
+
+### Arch Linux
+This dependence is to generate graph
+```{r, engine='bash', count_lines}
+sudo pacman -S python2-pip
+sudo pip2 install pygraphviz
 ```
 
 ## Clang
@@ -50,7 +61,7 @@ python2 main.py -h
 Officially, libClang is only supported in python2.
 
 ## License
-Project under MIT
+Project under GPLv3
 
 ## Contributors
 1. Mathieu Benoit - mathben
