@@ -4,6 +4,7 @@
 import uuid
 
 import variable
+import control
 from ast_object import ASTObject
 from clang_parser import clang
 from location import Location
@@ -55,8 +56,9 @@ class ParentStatement(object):
         self.order_id = -1
         self.operator_variable = None
 
-        # only Statement
         self.stmt_child = []
+
+        self.control = control.ControlDependency(self)
 
     def generator_child(self, ignore_unknown=True, ignore_empty_cfg_child=True, add_variable=False,
                         field_name_not_empty=None):
@@ -217,10 +219,18 @@ class ParentStatement(object):
         for stmt_child in stmt.stmt_child:
             ParentStatement.remove_compound(stmt_child)
 
+    def get_order(self, prefix=None, suffix=None):
+        order = "#%s" % self.order_id if self.order_id != -1 else ""
+        if order:
+            if prefix:
+                order = prefix + order
+            if suffix:
+                order += suffix
+        return order
+
     def label(self):
         desc = "" if not self.description else "\n%s" % self.description
-        order = "#%s - " % self.order_id if self.order_id != -1 else ""
-        return "%s%s\nline %s%s" % (order, self.name, self.location.line, desc)
+        return "%s%s\nline %s%s" % (self.get_order(suffix=" - "), self.name, self.location.line, desc)
 
     def has_from_recursive(self, stmt=None):
         # TODO need to clean here
@@ -285,7 +295,7 @@ class ParentStatement(object):
         contain_info = info_from or info_to
         info_dom = " - dom %s" % self.dom_next_stmt if contain_info and self.dom_next_stmt else ""
         info_post_dom = " - post-dom %s" % self.post_dom_next_stmt if contain_info and self.post_dom_next_stmt else ""
-        order = " - #%s" % self.order_id if self.order_id != -1 else ""
+        order = self.get_order(prefix=" - ")
         tuple_info = (order, info_from, info_to, info_dom, info_post_dom)
         return "%s%s%s%s%s" % tuple_info
 
@@ -467,8 +477,7 @@ class ParentStatement(object):
             setattr(stmt, stmt_ref["dom_parent_stmt"], common_stmt)
 
     def __repr__(self):
-        order = "#%s " % self.order_id if self.order_id != -1 else ""
-        return "%s'%s' l %s" % (order, self.name, self.location.line)
+        return "%s'%s' l %s" % (self.get_order(suffix=" "), self.name, self.location.line)
 
 
 class FakeStatement(ParentStatement):
@@ -486,8 +495,7 @@ class FakeStatement(ParentStatement):
         self.is_unknown = False
 
     def label(self):
-        order = "#%s - " % self.order_id if self.order_id != -1 else ""
-        return "%s%s\nline %s" % (order, self.name, self.location.line)
+        return "%s%s\nline %s" % (self.get_order(suffix=" - "), self.name, self.location.line)
 
     def is_root(self):
         return self.begin_stmt.is_root()
@@ -546,6 +554,8 @@ class Statement(ASTObject, ParentStatement):
             self._generate_dominator_cfg(ref_key="post_dominator")
             # generate reach definition
             variable.ReachDefinition.generate_reach_definition(self)
+            # generate control dependency
+            self.control.generate_control_dependency()
 
     def _get_variable(self, cursor, param_decl=None):
         # search gen/kill variable

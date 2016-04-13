@@ -22,7 +22,7 @@ class GenerateCfg(object):
         self._add_stmt_dot()
 
         self.g.layout(prog='dot')
-        self.g.draw(path=self.file_path + "_circo.svgz", format='svgz')
+        self.g.draw(path=self.file_path + "_dot.svgz", format='svgz')
 
         self.g.write(self.file_path)
 
@@ -76,12 +76,7 @@ class GenerateCfg(object):
 
             if var_cfg.lst_var:
                 gen_str = " ".join(var_cfg.lst_gen_name())
-                if not gen_str:
-                    gen_str = "-"
-
                 kill_str = " ".join(var_cfg.lst_kill_name())
-                if not kill_str:
-                    kill_str = "-"
 
                 str_grid += """
                            <tr><td port="b">Gen</td><td port="c">%s</td><td port="d">Kill</td><td port="e">%s</td></tr>
@@ -89,19 +84,25 @@ class GenerateCfg(object):
 
             if var_cfg.reach_def_in:
                 reach_def_in_str = " ".join(var_cfg.lst_reach_def_in_name())
-                if not reach_def_in_str:
-                    reach_def_in_str = "-"
-
                 reach_def_out_str = " ".join(var_cfg.lst_reach_def_out_name())
-                if not reach_def_out_str:
-                    reach_def_out_str = "-"
-
                 nb_iteration = len(var_cfg.reach_def_in)
 
+                if reach_def_in_str or reach_def_out_str:
+                    str_grid += """
+                               <tr><td port="j">Reach def IN (%s)</td><td port="l">%s</td>
+                               <td port="k">Reach def OUT</td><td port="m">%s</td></tr>
+                    """.strip() % (nb_iteration, reach_def_in_str, reach_def_out_str)
+
+        if cfg.control.s:
+            s_control = " ".join(
+                ["[%s - %s - %s]" % (k.get_order(), v[0].get_order(), ",".join([s.get_order() for s in v[1]])) for k, v
+                 in cfg.control.s.items()])
+
+            if s_control:
                 str_grid += """
-                           <tr><td port="j">Reach def IN (%s)</td><td port="l">%s</td>
-                           <td port="k">Reach def OUT</td><td port="m">%s</td></tr>
-                """.strip() % (nb_iteration, reach_def_in_str, reach_def_out_str)
+                           <tr><td port="n">Edge - common ancestral, CD</td><td port="o">%s</td>
+                           <td port="p"></td><td port="q"></td></tr>
+                """.strip() % s_control
 
         str_grid += """
                 </table>>
