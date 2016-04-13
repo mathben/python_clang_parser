@@ -8,13 +8,13 @@ from function import Function
 
 
 class Class(ASTObject):
-    def __init__(self, cursor, filename=None):
+    def __init__(self, cursor, arg_parser, filename=None):
         super(Class, self).__init__(cursor, filename=filename)
 
-        self.methods = [Method(c_child, filename) for c_child in cursor.get_children() if
+        self.methods = [Method(c_child, arg_parser, filename=filename) for c_child in cursor.get_children() if
                         c_child.kind is clang.cindex.CursorKind.CXX_METHOD]
 
-        self.derived_class = [Class(c_child) for c_child in cursor.get_children() if
+        self.derived_class = [Class(c_child, arg_parser) for c_child in cursor.get_children() if
                               c_child.kind is clang.cindex.CursorKind.CXX_BASE_SPECIFIER]
 
         self.namespace_name = cursor.type.spelling

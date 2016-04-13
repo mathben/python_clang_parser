@@ -113,7 +113,11 @@ class GenerateCfg(object):
         # don't print if empty and no next or before stmt
         if not cfg or (not cfg.next_stmt and not cfg.before_stmt):
             return
-        self.g.add_node(cfg.unique_name, label=self._build_label(cfg, key_label))
+        if self._parser.show_detailed_cfg:
+            self.g.add_node(cfg.unique_name, label=self._build_label(cfg, key_label))
+        else:
+            label = cfg.label() if not cfg.is_root() else key_label + cfg.label()
+            self.g.add_node(cfg.unique_name, label=label)
 
         for key, lst_value in cfg.next_stmt.items():
             for value in lst_value:

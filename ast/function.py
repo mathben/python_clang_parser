@@ -11,7 +11,7 @@ import util
 
 
 class Function(ASTObject):
-    def __init__(self, cursor, filename=None):
+    def __init__(self, cursor, arg_parser, filename=None):
         # TODO keep a link to his parent
         super(Function, self).__init__(cursor, filename)
         self.keywords_stmt = Function.get_tokens_statistic(cursor)
@@ -19,8 +19,10 @@ class Function(ASTObject):
         # self.is_valid_cfg = False
         self.is_valid_cfg = True
         self.enable_cfg = False
+        self.cfg = []
         self.lst_cfg = collections.Counter()
-        if filename in cursor.location.file.name:  # and not cursor.is_virtual_method():
+
+        if arg_parser.generate_control_flow and filename in cursor.location.file.name:
             self.cfg = self._find_control_flow(cursor)
             is_type_void = cursor.result_type.kind is clang.cindex.TypeKind.VOID
             self.print_control_flow(self.cfg, is_type_void=is_type_void)
@@ -28,8 +30,6 @@ class Function(ASTObject):
             # self.validate_stmt()
             print("\n")
             self.enable_cfg = True
-        else:
-            self.cfg = []
 
     def get_dot(self):
         return ASTObject._get_dot_format(self)

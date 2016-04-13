@@ -376,7 +376,7 @@ class ParentStatement(object):
             stmt.add_stmt(self, condition=b_condition)
 
     @staticmethod
-    def _get_dominator_parent_stack(stmt, ref_key="dominator"):
+    def get_dominator_parent_stack(stmt, ref_key="dominator"):
         stmt_ref = ref_stmt[ref_key]
         # TODO use lambda
         if not stmt:
@@ -429,8 +429,8 @@ class ParentStatement(object):
                 set_predecessor = set()
                 set_predecessor_stack = set()
                 for predecessor in lst_before:
-                    stack = self._get_dominator_parent_stack(getattr(predecessor, stmt_ref["dom_parent_stmt"]),
-                                                             ref_key=ref_key)
+                    stack = self.get_dominator_parent_stack(getattr(predecessor, stmt_ref["dom_parent_stmt"]),
+                                                            ref_key=ref_key)
                     if not stack:
                         set_predecessor_stack = set()
                         break

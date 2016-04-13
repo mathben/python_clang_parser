@@ -9,6 +9,7 @@ class GenerateStatCsv(object):
     def __init__(self, _parser, _lst_obj_ast):
         self._parser = _parser
         self._lst_obj_ast = _lst_obj_ast
+        self._option_open_file = "a" if self._parser.append_csv else "w"
         # append data with csv_cursor_kind filter
         self._cursor_kind_filter = [clang.cindex.CursorKind.CLASS_DECL,
                                     clang.cindex.CursorKind.CLASS_TEMPLATE,
@@ -47,7 +48,7 @@ class GenerateStatCsv(object):
         if not self._parser.quiet:
             print("Creating csv on file '%s'" % filename)
 
-        with open(filename, 'w') as csv_file:
+        with open(filename, self._option_open_file) as csv_file:
             result = csv.writer(csv_file, delimiter=';', quotechar="", quoting=csv.QUOTE_NONE)
             result.writerow(self._header)
 

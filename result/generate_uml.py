@@ -32,8 +32,6 @@ class GenerateUml(object):
         dct_class_obj = ast.create_class_dict_from_lst_ast_obj(self._lst_obj_ast)
         for cls_obj in dct_class_obj.values():
             self._add_class_node(cls_obj)
-        # need a first iteration to create node before create edge
-        for cls_obj in dct_class_obj.values():
             self._add_class_base_edge(cls_obj)
             self._add_class_composition_edge(cls_obj)
 
