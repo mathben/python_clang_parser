@@ -351,7 +351,7 @@ class ParentStatement(object):
         if isinstance(next_stmt, ParentStatement):
             ParentStatement._append_stmt(self.next_stmt, next_stmt, condition=condition)
             ParentStatement._append_stmt(next_stmt.before_stmt, self, condition=condition)
-            print("TRACE before %s; next %s condition %s" % (self, next_stmt, condition))
+            # print("TRACE before %s; next %s condition %s" % (self, next_stmt, condition))
 
     def add_before_stmt(self, stmt, stack_parent):
         # stmt can be dict(key, Statement) or Statement or list(Statement)
@@ -502,7 +502,7 @@ class FakeStatement(ParentStatement):
 
 
 class Statement(ASTObject, ParentStatement):
-    def __init__(self, cursor, force_name=None, count_stmt=None, is_condition=False, method_obj=None,
+    def __init__(self, cursor, arg_parser=None, force_name=None, count_stmt=None, is_condition=False, method_obj=None,
                  stack_parent=None, before_stmt=None, param_decl=None):
         super(Statement, self).__init__(cursor, filename=None, store_variable=False)
 

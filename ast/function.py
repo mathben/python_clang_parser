@@ -23,12 +23,13 @@ class Function(ASTObject):
         self.lst_cfg = collections.Counter()
 
         if arg_parser.generate_control_flow and filename in cursor.location.file.name:
-            self.cfg = self._find_control_flow(cursor)
+            self.cfg = self._find_control_flow(cursor, arg_parser)
             is_type_void = cursor.result_type.kind is clang.cindex.TypeKind.VOID
-            self.print_control_flow(self.cfg, is_type_void=is_type_void)
-            # TODO add validation stmt, need to identify else stmt
-            # self.validate_stmt()
-            print("\n")
+            if arg_parser.debug:
+                self.print_control_flow(self.cfg, is_type_void=is_type_void)
+                # TODO add validation stmt, need to identify else stmt
+                # self.validate_stmt()
+                print("\n")
             self.enable_cfg = True
 
     def get_dot(self):
@@ -65,7 +66,7 @@ class Function(ASTObject):
         # return file_str + function_str
         return function_str
 
-    def _find_control_flow(self, cursor):
+    def _find_control_flow(self, cursor, arg_parser):
         if not isinstance(cursor, clang.cindex.Cursor):
             return []
 
@@ -74,7 +75,7 @@ class Function(ASTObject):
         if len(start_stmt_cursor) != 1:
             print("Error, cannot find stmt child into function %s" % self)
             return None
-        return Statement(start_stmt_cursor[0], count_stmt=self.lst_cfg, method_obj=self,
+        return Statement(start_stmt_cursor[0], arg_parser=arg_parser, count_stmt=self.lst_cfg, method_obj=self,
                          param_decl=[a for a in cursor.get_children()][:-1])
 
     def merge(self, fct):
