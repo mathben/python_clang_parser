@@ -11,7 +11,7 @@ import util
 
 
 class Function(ASTObject):
-    def __init__(self, cursor, filename=None):
+    def __init__(self, cursor, arg_parser, filename=None):
         # TODO keep a link to his parent
         super(Function, self).__init__(cursor, filename)
         self.keywords_stmt = Function.get_tokens_statistic(cursor)
@@ -19,17 +19,18 @@ class Function(ASTObject):
         # self.is_valid_cfg = False
         self.is_valid_cfg = True
         self.enable_cfg = False
+        self.cfg = []
         self.lst_cfg = collections.Counter()
-        if filename in cursor.location.file.name:  # and not cursor.is_virtual_method():
-            self.cfg = self._find_control_flow(cursor)
+
+        if arg_parser.generate_control_flow and filename in cursor.location.file.name:
+            self.cfg = self._find_control_flow(cursor, arg_parser)
             is_type_void = cursor.result_type.kind is clang.cindex.TypeKind.VOID
-            self.print_control_flow(self.cfg, is_type_void=is_type_void)
-            # TODO add validation stmt, need to identify else stmt
-            # self.validate_stmt()
-            print("\n")
+            if arg_parser.debug:
+                self.print_control_flow(self.cfg, is_type_void=is_type_void)
+                # TODO add validation stmt, need to identify else stmt
+                # self.validate_stmt()
+                print("\n")
             self.enable_cfg = True
-        else:
-            self.cfg = []
 
     def get_dot(self):
         return ASTObject._get_dot_format(self)
@@ -65,7 +66,7 @@ class Function(ASTObject):
         # return file_str + function_str
         return function_str
 
-    def _find_control_flow(self, cursor):
+    def _find_control_flow(self, cursor, arg_parser):
         if not isinstance(cursor, clang.cindex.Cursor):
             return []
 
@@ -74,7 +75,8 @@ class Function(ASTObject):
         if len(start_stmt_cursor) != 1:
             print("Error, cannot find stmt child into function %s" % self)
             return None
-        return Statement(start_stmt_cursor[0], count_stmt=self.lst_cfg, method_obj=self)
+        return Statement(start_stmt_cursor[0], arg_parser=arg_parser, count_stmt=self.lst_cfg, method_obj=self,
+                         param_decl=[a for a in cursor.get_children()][:-1])
 
     def merge(self, fct):
         if not isinstance(fct, Function):
@@ -89,7 +91,7 @@ class Function(ASTObject):
             print("%s%s. %s - line %s%s" % (level * "\t", no_iter, stmt.name, stmt.location.line, stmt.info()))
 
         def print_cfg_child(stmt, level=0, no_iter=0):
-            do_print = stmt.has_from_recursive()
+            do_print = True  # stmt.has_from_recursive()
             if do_print:
                 # print begin stmt here
                 print_line(stmt, level=level, no_iter=no_iter)
@@ -101,9 +103,9 @@ class Function(ASTObject):
                     print_cfg_child(child, level=level + 1, no_iter=child_iter)
                     child_iter += 1
 
-            if stmt.end_stmt:
+            if stmt.is_block_stmt() or stmt.is_root():
                 end_stmt = stmt.end_stmt
-                do_print = end_stmt.has_from_recursive()
+                do_print = True  # end_stmt.has_from_recursive()
                 if do_print:
                     # print end stmt here
                     print_line(end_stmt, level=level, no_iter=no_iter)

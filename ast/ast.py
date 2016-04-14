@@ -12,7 +12,7 @@ from ast_class import Class
 AST_EXT_FILE = ".ast"
 
 
-def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
+def build_classes(cursor, filename, dir_name, arg_parser, is_first_call=True):
     result = []
     # ignore Cursor Kind
     all_kind = [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE,
@@ -20,7 +20,10 @@ def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
                 clang.cindex.CursorKind.FUNCTION_DECL, clang.cindex.CursorKind.CXX_METHOD]
 
     # not work with .hh and .cc in same time
-    header_filename = filename[filename.rfind("/"):-3]
+    # TODO use os path function
+    # TODO need to check if children is not already parse
+    # TODO this technique seems bad to ignore other file from header and source into project
+    header_filename = filename[filename.rfind("/") + 1:-4]
     children_cursor = [m for m in cursor.get_children() if m.location.file and dir_name in m.location.file.name and
                        header_filename in m.location.file.name and m.kind in all_kind]
 
@@ -29,13 +32,13 @@ def build_classes(cursor, filename, dir_name, _arg_parser, is_first_call=True):
         if c_child.kind in [clang.cindex.CursorKind.CLASS_DECL, clang.cindex.CursorKind.CLASS_TEMPLATE]:
             # eliminate forward declaration class, if token size <= 3
             if len([t for t in c_child.get_tokens()]) > 3:
-                cls = Class(c_child, filename)
+                cls = Class(c_child, arg_parser, filename=filename)
                 result.append(cls)
         elif c_child.kind == clang.cindex.CursorKind.NAMESPACE:
-            result.extend(build_classes(c_child, filename, dir_name, _arg_parser, is_first_call=False))
+            result.extend(build_classes(c_child, filename, dir_name, arg_parser, is_first_call=False))
         elif c_child.kind in [clang.cindex.CursorKind.FUNCTION_TEMPLATE, clang.cindex.CursorKind.FUNCTION_DECL,
                               clang.cindex.CursorKind.CXX_METHOD]:
-            fct = Function(c_child, filename)
+            fct = Function(c_child, arg_parser, filename=filename)
             result.append(fct)
 
     # merge header with src
@@ -119,6 +122,9 @@ def clang_parser(arg):
     _obj_c_clang_index = clang.cindex.conf.lib.clang_createIndex(_arg_parser.exclude_decl_from_PCH,
                                                                  _arg_parser.show_missing_header_file)
     _clang_index = clang.cindex.Index(_obj_c_clang_index)
+
+    # if _arg_parser.debug:
+    #     print("Trace, execute ast for %s" % _ast_file_path)
 
     if _ast_file_exist:
         # load AST

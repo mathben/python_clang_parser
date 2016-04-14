@@ -10,7 +10,7 @@ from multiprocessing import Pool
 
 # local import
 from ast import ast
-import export
+import result
 
 AST_EXT_FILE = ".ast"
 CSV_EXT_FILE = ".csv"
@@ -26,14 +26,17 @@ def parse_args():
                              help='Silence all verbose print.')
 
     group = _arg_parser.add_argument_group("Debug")
-    group.add_argument('-d', '--debug', default=False, help='Enable debug', action='store_true')
-    group.add_argument('--show_missing_header_file', default=False, help='Show when Clang cannot find header file.',
-                       action='store_true')
+    group.add_argument('-d', '--debug', default=False, action='store_true',
+                       help='Enable debug')
+    group.add_argument('--show_missing_header_file', default=False, action='store_true',
+                       help='Show when Clang cannot find header file.')
     group.add_argument('--remove_token', default=False, action='store_true',
                        help='We need token to retrieve the algorithm or condition statistic.')
     group.add_argument('--exclude_decl_from_PCH', default=False, action='store_true',
                        help='Exclude local declarations from PCH in translation unit when parsing with Clang. '
                             'No difference when debug or on performance execution if not using PCH file.')
+    group.add_argument('--show_metric_time', default=False, action='store_true',
+                       help='Show metric time for algorithm. Quiet has no impact on this argument.')
 
     group = _arg_parser.add_argument_group("Parallelism")
     group.add_argument('--disable_threading', default=False, action='store_true',
@@ -55,6 +58,12 @@ def parse_args():
     group.add_argument('--working_path',
                        help='Specify path of file or directory. Need to exist into root_directory. '
                             'If not specified, working_path will be root_directory.')
+    group.add_argument('--exclude_path', default="",
+                       help='Exclude path of analysing.')
+    group.add_argument('--white_path', default="",
+                       help='Path of white list. If not empty, only file from this path will be include.')
+    group.add_argument('--graph_path', default="graph",
+                       help='Specify path of graph generation.')
     group.add_argument('--translation_unit_dir',
                        help='Specify path of translation unit directory where to save AST file generate by Clang. '
                             'The parser will use the saving file if exist. '
@@ -71,6 +80,8 @@ def parse_args():
                             'See --csv_stat_name to change the output name file.')
     group.add_argument('--csv', default="result" + CSV_EXT_FILE,
                        help='Output csv name file of statistic generation. Add extension %s if not set.' % CSV_EXT_FILE)
+    group.add_argument('--append_csv', default=False, action='store_true',
+                       help='Append result on csv file. Useful when run multiple execution.')
 
     group = _arg_parser.add_argument_group("UML")
     group.add_argument('--generate_uml', default=False, action='store_true',
@@ -79,6 +90,10 @@ def parse_args():
     group = _arg_parser.add_argument_group("Control Flow")
     group.add_argument('--generate_control_flow', default=False, action='store_true',
                        help='Generate control flow from main function.')
+    group.add_argument('--generate_dominator', default=False, action='store_true',
+                       help='Generate dominator and post-dominator graph from control flow.')
+    group.add_argument('--show_detailed_cfg', default=False, action='store_true',
+                       help='Show detailed information in cfg graph.')
 
     return _arg_parser
 
@@ -117,7 +132,7 @@ def validate_parser(_arg_parser):
             _parser.csv += CSV_EXT_FILE
         # validate if can open it
         try:
-            open(_parser.csv).close()
+            open(_parser.csv, mode="a").close()
         except:
             raise ValueError("--csv %s is wrong or maybe you don't access to write a file." % _parser.csv)
 
@@ -164,10 +179,31 @@ def validate_parser(_arg_parser):
     else:
         raise Exception("Argument --working_path '%s' is not a file or a dir." % _parser.working_path)
     # remove root_directory from file, for better visibility and filter with exclude dir
-    # TODO add ignore option from parsing
-    # TODO fast fix to ignore gtest
     _pos_cut_path = len(_root_dir) + 1
-    _parser.files = [_file[_pos_cut_path:] for _file in _lst_file if "/test/" not in _file and "/build/" not in _file]
+    lst_file = []
+    # TODO create absolute path with exclude path
+    lst_exclude_path = _parser.exclude_path.split(";") if _parser.exclude_path else []
+    lst_white_path = _parser.white_path.split(";") if _parser.white_path else []
+
+    for _file in _lst_file:
+        # ignore path
+        is_ignore = False
+        for exclude_path in lst_exclude_path:
+            if exclude_path in _file:
+                is_ignore = True
+                break
+        if is_ignore:
+            continue
+        # white path
+        for white_path in lst_white_path:
+            if white_path in _file:
+                break
+        else:
+            if lst_white_path:
+                continue
+        lst_file.append(_file[_pos_cut_path:])
+
+    _parser.files = lst_file
 
     return _parser
 
@@ -203,7 +239,8 @@ def start_clang_process(_parser):
         lst_result = []
         for clang_obj_result in it:
             i_file += 1
-            print("(%s/%s) File %s" % (i_file, count_file, clang_obj_result[0]))
+            if not _parser.quiet:
+                print("(%s/%s) File %s" % (i_file, count_file, clang_obj_result[0]))
             lst_result.append(clang_obj_result)
     # compute ast completion
     # clang_parser.class_completion(lst_result)
@@ -218,15 +255,19 @@ if __name__ == '__main__':
     lst_obj_ast = start_clang_process(parser)
 
     if parser.generate_csv_stat:
-        export.ClangParserCSV(parser, lst_obj_ast).generate_stat()
+        result.generate_stat_csv.GenerateStatCsv(parser, lst_obj_ast).generate_stat()
 
     if parser.generate_uml:
-        export.ClangParserUML(parser, lst_obj_ast).generate_uml()
+        result.generate_uml.GenerateUml(parser, lst_obj_ast).generate_uml()
 
     if parser.generate_control_flow:
-        export.ClangParserCFG(parser, lst_obj_ast).generate_cfg()
+        result.generate_cfg.GenerateCfg(parser, lst_obj_ast).generate_cfg()
+
+    if parser.generate_dominator:
+        result.generate_dominator.GenerateDominator(parser, lst_obj_ast).generate_dominator()
+        result.generate_dominator.GenerateDominator(parser, lst_obj_ast, is_dominator=False).generate_dominator()
 
     duration_time = datetime.timedelta(seconds=time.time() - start_time)
     duration_clock = datetime.timedelta(seconds=time.clock() - start_clock)
-    if not parser.quiet:
+    if parser.show_metric_time or not parser.quiet:
         print("Elapsed time was %s and elapsed clock was %s." % (duration_time, duration_clock))
